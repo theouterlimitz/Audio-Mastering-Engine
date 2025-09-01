@@ -6,7 +6,6 @@ This application is the stable, local version of the project. A future release i
 
 ![Screenshot of the Audio Mastering Suite GUI](gui.png)
 
-
 ---
 
 ## Features
@@ -15,7 +14,7 @@ This suite goes beyond basic audio processing, incorporating advanced features f
 
 -   **Intuitive Graphical Interface:** A clean, dark-themed UI built with Tkinter that provides real-time control over all parameters without touching the command line.
 -   **Upgraded Mastering Engine:**
-    -   **Analog Character Control:** A single, powerful knob that intelligently blends harmonic saturation, a gentle sub-bass "bump," and a high-end "sparkle" to add vintage analog warmth and mojo.
+    -   **Analog Character Control:** A single, powerful slider that intelligently blends harmonic saturation, a gentle sub-bass "bump," and a high-end "sparkle" to add vintage analog warmth and mojo.
     -   **Phase-Coherent Multiband Compressor:** A re-architected 3-band compressor that avoids phase cancellation issues, ensuring a tight, punchy, and clean sound. Features detailed controls for threshold and ratio on each band.
     -   **Professional EQ & Widening:** A full 4-band equalizer and a stereo widener to shape the tonal balance and spatial image of your mix.
 -   **Streaming-Ready Loudness:** Utilizes **LUFS (Loudness Units Full Scale)** normalization to target the consistent, balanced loudness levels required by modern streaming platforms like Spotify and Apple Music.
@@ -24,7 +23,13 @@ This suite goes beyond basic audio processing, incorporating advanced features f
 
 ---
 
+## Installation & Setup
 
+This application requires a specific Python environment to ensure all audio libraries and UI components work correctly. Please follow these steps.
+
+### 1. Create a Conda Environment
+
+This project is built and tested with **Python 3.11**. The best way to manage this and its dependencies is with a dedicated Conda environment.
 
 ```bash
 # Create a new environment named "audio_env" with Python 3.11
