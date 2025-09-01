@@ -5,7 +5,7 @@ A professional-grade, local desktop application for mastering audio files. Built
 This application is the stable, local version of the project. A future release is planned to transition this engine to a scalable, cloud-native web application on Google Cloud Platform.
 
 ![Screenshot of the Audio Mastering Suite GUI](gui.png)
-*(To add your screenshot, name your image file `gui.png` and place it in the main project folder.)*
+
 
 ---
 
