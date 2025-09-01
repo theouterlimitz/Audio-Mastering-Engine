@@ -1,0 +1,9 @@
+#worker requirements
+pydub
+scipy
+numpy
+pyloudnorm
+google-cloud-storage
+Flask==2.3.2
+gunicorn
+tqdm

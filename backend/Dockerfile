@@ -1,3 +1,4 @@
+#backend 
 # Use the official, modern image for Python 3.11, built on the stable "Bullseye" OS.
 # This is the definitive, correct foundation for our application.
 FROM python:3.11-bullseye
