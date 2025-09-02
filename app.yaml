@@ -1,12 +1,11 @@
-# app.yaml (Corrected for Flexible Environment Scaling)
-# This configuration uses the App Engine Flexible Environment to run a custom
-# Docker container, which is necessary for installing system dependencies like FFmpeg.
+# app.yaml (Final Version)
+# This configuration uses the App Engine Flexible Environment and removes the
+# 'skip_files' directive in favor of the modern .gcloudignore file.
 
 runtime: custom
 env: flex
 
 # Resource allocation for the flexible environment instances.
-# These are good starting points for audio processing.
 resources:
   cpu: 1
   memory_gb: 2
@@ -15,16 +14,8 @@ resources:
 automatic_scaling:
   # The minimum number of instances for env:flex must be 1 or greater.
   min_num_instances: 1
-  max_num_instances: 2 # Increase this if you expect high traffic
+  max_num_instances: 2
   cool_down_period_sec: 180
   cpu_utilization:
     target_utilization: 0.7
-
-# This tells App Engine to ignore these files when creating the container image,
-# which can speed up deployments.
-skip_files:
-- Dockerfile
-- .gcloudignore
-- .git/
-- .gitignore
 
