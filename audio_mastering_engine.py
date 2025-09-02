@@ -1,15 +1,18 @@
-# audio_mastering_engine.py (v2.4 - Local Desktop Version)
+# audio_mastering_engine.py (v2.5 - App Engine Cloud Version)
 #
-# This version corrects the critical NameError by importing the 'lfilter'
-# function from the scipy.signal library.
+# This version includes the original processing logic and adds a new
+# wrapper function 'process_audio_from_gcs' to handle file operations
+# with Google Cloud Storage, making it compatible with the App Engine environment.
 
 import os
 import numpy as np
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
-from scipy.signal import butter, sosfilt, lfilter # <--- THE FIX IS HERE
+from scipy.signal import butter, sosfilt, lfilter
 import pyloudnorm as pyln
 import traceback
+import tempfile
+from google.cloud import storage
 
 # --- PRESET DEFINITIONS ---
 EQ_PRESETS = {
@@ -19,11 +22,58 @@ EQ_PRESETS = {
     "rock": { "bass_boost": 1.5, "mid_cut": -2.0, "presence_boost": 2.5, "treble_boost": 1.0 }
 }
 
-# --- CORE PROCESSING LOGIC ---
+# --- GCS WRAPPER FUNCTION (FOR CLOUD USE) ---
+
+def process_audio_from_gcs(gcs_uri, settings):
+    """
+    Downloads a file from GCS, processes it using the existing local engine,
+    and uploads the result back to GCS.
+    """
+    storage_client = storage.Client()
+    
+    # 1. Parse GCS URI to get bucket and blob name
+    if not gcs_uri.startswith('gs://'):
+        raise ValueError("Invalid GCS URI")
+    bucket_name, blob_name = gcs_uri[5:].split('/', 1)
+    
+    bucket = storage_client.bucket(bucket_name)
+    input_blob = bucket.blob(blob_name)
+
+    # 2. Download the file to a temporary location
+    with tempfile.NamedTemporaryFile(suffix=os.path.splitext(blob_name)[1]) as temp_in:
+        print(f"Downloading {gcs_uri} to {temp_in.name}")
+        input_blob.download_to_filename(temp_in.name)
+
+        original_filename = settings.get('original_filename', 'unknown.wav')
+        output_filename = f"mastered_{original_filename}"
+        
+        # Use another temporary file for the output
+        with tempfile.NamedTemporaryFile(suffix=".wav") as temp_out:
+            
+            # 3. Use your existing process_audio function for local files
+            new_settings = settings.copy()
+            new_settings["input_file"] = temp_in.name
+            new_settings["output_file"] = temp_out.name
+            
+            # This is your original, unchanged processing function
+            process_audio(new_settings)
+
+            # 4. Upload the processed file back to GCS
+            output_blob_name = f"processed/{output_filename}"
+            output_blob = bucket.blob(output_blob_name)
+            
+            print(f"Uploading processed file to gs://{bucket_name}/{output_blob_name}")
+            output_blob.upload_from_filename(temp_out.name, content_type='audio/wav')
+            
+            # 5. Create a ".complete" flag file for the status checker
+            complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
+            complete_flag_blob.upload_from_string("done")
+
+# --- CORE PROCESSING LOGIC (FOR LOCAL FILES) ---
 
 def process_audio(settings, status_callback=None, progress_callback=None):
     """
-    The main audio processing function for the local GUI.
+    The main audio processing function, works with local file paths.
     """
     try:
         input_file = settings.get("input_file")

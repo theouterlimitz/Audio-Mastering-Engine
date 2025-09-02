@@ -1,16 +1,28 @@
-# This is the master blueprint for our Google App Engine application.
-# This version uses the modern, explicit entrypoint syntax required
-# by the Python 3.11 runtime, with correct YAML formatting.
+# app.yaml (Updated for Custom Docker Runtime)
+# This configuration uses the App Engine Flexible Environment to run a custom
+# Docker container, which is necessary for installing system dependencies like FFmpeg.
 
-runtime: python311
+runtime: custom
+env: flex
 
-# This is the corrected, modern syntax for the startup command.
-# The '|' character tells YAML to treat the following as a single block of text.
-entrypoint: >
-  gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
-
-instance_class: F2
-
+# Resource allocation for the flexible environment instances.
+# These are good starting points for audio processing.
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
+  
 automatic_scaling:
-  min_instances: 0
-  max_instances: 1
+  min_num_instances: 0
+  max_num_instances: 2 # Increase this if you expect high traffic
+  cool_down_period_sec: 180
+  cpu_utilization:
+    target_utilization: 0.7
+
+# This tells App Engine to ignore these files when creating the container image,
+# which can speed up deployments.
+skip_files:
+- Dockerfile
+- .gcloudignore
+- .git/
+- .gitignore
