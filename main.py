@@ -1,7 +1,7 @@
-# main.py (Final, Bulletproof Version)
+# main.py (Final, Corrected Version)
 #
-# This version explicitly uses the IAM API to sign URLs, bypassing the
-# platform-specific issue with the simpler signing method.
+# This version uses the official `google.auth.iam.Signer` to explicitly
+# use the IAM API for signing URLs. This is the correct and most robust method.
 
 import os
 import json
@@ -11,15 +11,16 @@ from flask import Flask, render_template, request, jsonify
 
 from google.cloud import storage
 from google.cloud import tasks_v2
+# --- CORRECT IMPORTS FOR SIGNING ---
 import google.auth
-# --- NEW IMPORTS ---
 from google.auth.transport.requests import Request
-from google.iam.credentials_v1 import iam_credentials_client
+from google.auth import iam
 
 app = Flask(__name__)
 
 # --- Configuration ---
 try:
+    # Get the default credentials and project ID from the environment
     credentials, GCP_PROJECT_ID = google.auth.default()
 except google.auth.exceptions.DefaultCredentialsError:
     GCP_PROJECT_ID = os.environ.get('GCP_PROJECT', None)
@@ -28,33 +29,18 @@ except google.auth.exceptions.DefaultCredentialsError:
 
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
+# Match the region from your `gcloud app create` command
 TASK_LOCATION = 'us-east1' 
 
 storage_client = storage.Client()
 tasks_client = tasks_v2.CloudTasksClient()
-
-# --- NEW HELPER FOR EXPLICIT SIGNING ---
-# This helper function directly calls the IAM API to sign a blob of data.
-# This is the most reliable way to sign in a secure environment.
-def sign_string(string_to_sign, service_account_email):
-    """Signs a string using the IAM signBlob API."""
-    iam_client = iam_credentials_client.IAMCredentialsClient()
-    name = f"projects/-/serviceAccounts/{service_account_email}"
-    
-    # The IAM API expects the data to be bytes.
-    payload_bytes = string_to_sign.encode("utf-8")
-
-    response = iam_client.sign_blob(
-        request={"name": name, "payload": payload_bytes}
-    )
-    return response.signed_blob
 
 # --- Frontend Route ---
 @app.route('/')
 def index():
     return render_template('index.html')
 
-# --- API Endpoints (Updated) ---
+# --- API Endpoints (Updated with Correct Signer) ---
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     try:
@@ -67,16 +53,17 @@ def generate_upload_url():
         
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
         
-        # We now use our custom signing function. The storage library knows
-        # how to use a function passed to `credentials` for signing.
-        signer = lambda string_to_sign: sign_string(string_to_sign, service_account_email)
+        # Create an IAM signer using the application's default credentials.
+        # This is the correct way to request a signature from the IAM API.
+        signer = iam.Signer(Request(), credentials, service_account_email)
 
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
-            credentials=google.auth.credentials.AnonymousCredentials(), # Required for custom signer
+            service_account_email=service_account_email,
+            access_token=signer.get_access_token(),
             signer=signer
         )
         
@@ -84,13 +71,12 @@ def generate_upload_url():
         return jsonify({"url": url, "gcs_uri": gcs_uri}), 200
 
     except Exception as e:
-        print("CRITICAL ERROR in generate_upload_url:", traceback.format_exc())
-        return jsonify({"error": f"CRITICAL Backend Error: {e}"}), 500
+        print("ERROR in generate_upload_url:", traceback.format_exc())
+        return jsonify({"error": f"Backend Error: {e}"}), 500
 
-# Other routes remain largely the same, but we need to update get_status as well
 @app.route('/start-processing', methods=['POST'])
 def start_processing():
-    # ... (This function does not need changes)
+    # This function is correct and does not need changes
     try:
         data = request.get_json()
         if not data or 'gcs_uri' not in data or 'settings' not in data:
@@ -101,7 +87,6 @@ def start_processing():
         try:
             tasks_client.get_queue(name=queue_path)
         except Exception:
-            from google.api_core.exceptions import NotFound
             try:
                 tasks_client.create_queue(parent=parent, queue={"name": queue_path})
             except Exception as create_err:
@@ -144,12 +129,13 @@ def get_status():
              return jsonify({"status": "error", "message": "Processing complete but output file is missing."}), 404
         
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
-        signer = lambda string_to_sign: sign_string(string_to_sign, service_account_email)
+        signer = iam.Signer(Request(), credentials, service_account_email)
         
         download_url = audio_blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=60),
-            credentials=google.auth.credentials.AnonymousCredentials(),
+            service_account_email=service_account_email,
+            access_token=signer.get_access_token(),
             signer=signer
         )
         return jsonify({"status": "done", "download_url": download_url}), 200
@@ -159,7 +145,7 @@ def get_status():
 
 @app.route('/process-task', methods=['POST'])
 def process_task():
-    # ... (This function does not need changes)
+    from audio_mastering_engine import process_audio_from_gcs
     job_data = json.loads(request.data.decode('utf-8'))
     gcs_uri = job_data.get('gcs_uri')
     settings = job_data.get('settings')
