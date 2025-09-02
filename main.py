@@ -1,7 +1,7 @@
-# main.py (App Engine Version with Debugging)
+# main.py (Final Production Version)
 #
-# This version adds a try/except block to the generate_upload_url function
-# to catch the specific error and return it to the frontend.
+# This version correctly generates signed URLs in the App Engine environment
+# by using the IAM API for signing, resolving the private key error.
 
 import os
 import json
@@ -30,7 +30,8 @@ except google.auth.exceptions.DefaultCredentialsError:
 
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
-TASK_LOCATION = 'us-central1' # Note: This might need to match your app's region if not default
+# App Engine regions are structured differently. Let's use the one from our app creation.
+TASK_LOCATION = 'us-east1' 
 
 # Initialize the clients for Google Cloud services
 storage_client = storage.Client()
@@ -46,7 +47,6 @@ def index():
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     """Generates a secure, short-lived URL for the client to upload a file directly to GCS."""
-    # --- THIS IS THE NEW DEBUGGING CODE ---
     try:
         data = request.get_json()
         if not data or 'filename' not in data:
@@ -54,24 +54,27 @@ def generate_upload_url():
 
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"raw_uploads/{data['filename']}")
+        
+        # --- THIS IS THE FIX ---
+        # Construct the service account email that App Engine is running as.
+        service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
 
-        # Generate a V4 signed URL.
+        # By providing the service account email, the library will use the IAM API
+        # to sign the URL instead of trying to find a local private key.
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
+            service_account_email=service_account_email 
         )
         
         gcs_uri = f"gs://{BUCKET_NAME}/raw_uploads/{data['filename']}"
         return jsonify({"url": url, "gcs_uri": gcs_uri}), 200
 
     except Exception as e:
-        # If anything goes wrong, catch the exception, print it to the server log,
-        # and return the error message in the response so we can see it.
         print("ERROR in generate_upload_url:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}", "full_trace": traceback.format_exc()}), 500
-    # --- END OF NEW DEBUGGING CODE ---
+        return jsonify({"error": f"Backend Error: {e}"}), 500
 
 
 @app.route('/start-processing', methods=['POST'])
@@ -82,7 +85,6 @@ def start_processing():
         if not data or 'gcs_uri' not in data or 'settings' not in data:
             return jsonify({"error": "Missing GCS URI or settings"}), 400
 
-        # Create a task queue if it doesn't exist (important for first-time setup)
         parent = f"projects/{GCP_PROJECT_ID}/locations/{TASK_LOCATION}"
         queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
         try:
@@ -90,7 +92,6 @@ def start_processing():
         except Exception:
             tasks_client.create_queue(parent=parent, queue={"name": queue_path})
             
-        # Create a task and add it to the queue.
         task = {
             "app_engine_http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,
@@ -106,7 +107,7 @@ def start_processing():
         return jsonify({"message": "Processing job started.", "processed_filename": processed_filename}), 200
     except Exception as e:
         print("ERROR in start_processing:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}", "full_trace": traceback.format_exc()}), 500
+        return jsonify({"error": f"Backend Error: {e}"}), 500
 
 
 @app.route('/status', methods=['GET'])
@@ -127,14 +128,18 @@ def get_status():
         if not audio_blob.exists():
              return jsonify({"status": "error", "message": "Processing complete but output file is missing."}), 404
         
+        # --- THIS IS THE FIX (APPLIED HERE AS WELL) ---
+        service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
+        
         download_url = audio_blob.generate_signed_url(
             version="v4",
-            expiration=datetime.timedelta(minutes=60)
+            expiration=datetime.timedelta(minutes=60),
+            service_account_email=service_account_email
         )
         return jsonify({"status": "done", "download_url": download_url}), 200
     except Exception as e:
         print("ERROR in get_status:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}", "full_trace": traceback.format_exc()}), 500
+        return jsonify({"error": f"Backend Error: {e}"}), 500
 
 # --- Background Worker Route ---
 @app.route('/process-task', methods=['POST'])
