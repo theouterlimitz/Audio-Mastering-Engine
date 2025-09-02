@@ -1,6 +1,6 @@
-# app.yaml (Final Version)
-# This configuration uses the App Engine Flexible Environment and removes the
-# 'skip_files' directive in favor of the modern .gcloudignore file.
+# app.yaml (Final Correct Version for New Project)
+# This deploys the application to the 'default' service using the
+# App Engine Flexible Environment with a custom runtime.
 
 runtime: custom
 env: flex
