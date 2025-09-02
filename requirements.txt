@@ -6,4 +6,4 @@ scipy==1.13.0
 pyloudnorm==0.1.1
 google-cloud-storage==2.14.0
 google-cloud-tasks==2.14.2
-google-cloud-iam==2.14.1
+google-cloud-iamcredentials==1.3.1
