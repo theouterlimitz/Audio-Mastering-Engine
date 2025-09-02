@@ -1,0 +1,15 @@
+Python package requirements for the unified App Engine application.
+
+Web server components
+Flask==2.3.2
+gunicorn
+
+Google Cloud libraries
+google-cloud-storage
+google-cloud-tasks
+
+Audio processing libraries
+pydub
+scipy
+numpy
+pyloudnorm

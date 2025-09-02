@@ -1,0 +1,25 @@
+# This is the master blueprint for our Google App Engine application.
+# It defines the runtime, server startup command, and scaling configuration.
+
+# Specifies that we want to use the modern, supported Python 3.11 environment.
+runtime: python311
+
+# This is the command that App Engine will run to start our web server.
+# We are using Gunicorn, the professional standard for Python web apps.
+# App Engine automatically injects the correct port number via the $PORT variable.
+entrypoint: gunicorn -b :$PORT --timeout 120 main:app
+
+# This defines the "size" of the server our code will run on.
+# F2 is a good, cost-effective starting point with 1 core and 256MB of RAM.
+# We can easily scale this up later if the app gets popular.
+instance_class: F2
+
+# This tells App Engine how to handle scaling automatically.
+automatic_scaling:
+  # The minimum number of idle instances to keep "warm" and ready.
+  # 0 is the most cost-effective for a new project.
+  min_instances: 0
+  # The maximum number of instances to spin up during a traffic spike.
+  max_instances: 1
+  # How long an instance should stay idle before shutting down.
+  min_idle_instances: 0

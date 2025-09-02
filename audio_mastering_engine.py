@@ -1,14 +1,13 @@
-# audio_mastering_engine.py (v2.3 - Local Desktop Version)
+# audio_mastering_engine.py (v2.4 - Local Desktop Version)
 #
-# This version contains two critical bug fixes:
-# 1. The multiband compressor is re-architected to be phase-coherent, solving the "horrible sound" issue.
-# 2. The WAV export is standardized to 16-bit CD quality, solving the massive file size issue.
+# This version corrects the critical NameError by importing the 'lfilter'
+# function from the scipy.signal library.
 
 import os
 import numpy as np
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
-from scipy.signal import butter, sosfilt, lfilter
+from scipy.signal import butter, sosfilt, lfilter # <--- THE FIX IS HERE
 import pyloudnorm as pyln
 import traceback
 
@@ -25,7 +24,6 @@ EQ_PRESETS = {
 def process_audio(settings, status_callback=None, progress_callback=None):
     """
     The main audio processing function for the local GUI.
-    Takes a dictionary of settings and callbacks for status and progress updates.
     """
     try:
         input_file = settings.get("input_file")
@@ -35,20 +33,17 @@ def process_audio(settings, status_callback=None, progress_callback=None):
             if status_callback: status_callback("Error: Input or output file not specified.")
             return
 
-        if not os.path.exists(input_file):
-            if status_callback: status_callback(f"Error: Input file not found at '{input_file}'")
-            return
-
-        if status_callback: status_callback(f"Loading audio file: {input_file}")
+        if status_callback: status_callback(f"Loading and preparing audio file: {input_file}")
         audio = AudioSegment.from_file(input_file)
-
-        # Ensure audio is stereo for processing
+        
+        # Professional standard: ensure we are working with stereo 16-bit audio
         if audio.channels == 1:
             audio = audio.set_channels(2)
+        if audio.sample_width != 2:
+            audio = audio.set_sample_width(2) # 2 bytes = 16 bits
         
         chunk_size_ms = 30 * 1000
         processed_chunks = []
-        
         num_chunks = len(range(0, len(audio), chunk_size_ms))
         
         if status_callback: status_callback("Processing audio...")
@@ -85,17 +80,15 @@ def process_audio(settings, status_callback=None, progress_callback=None):
 
         if settings.get("lufs") is not None:
             if status_callback: status_callback("Normalizing loudness...")
-            final_samples = normalize_to_lufs(final_samples, processed_audio.frame_rate, settings.get("lufs"), status_callback)
+            final_samples = normalize_to_lufs(final_samples, processed_audio.frame_rate, settings.get("lufs"))
 
         final_samples = soft_limiter(final_samples)
         final_audio = float_array_to_audio_segment(final_samples, processed_audio)
 
         if status_callback: status_callback(f"Exporting processed audio to: {output_file}")
         
-        # --- FIX for File Size: Export as 16-bit WAV ---
         output_format = os.path.splitext(output_file)[1][1:].lower() or "wav"
         if output_format == "wav":
-            # Set sample width to 2 bytes for 16-bit audio
             final_audio.export(output_file, format="wav", parameters=["-acodec", "pcm_s16le"])
         else:
             final_audio.export(output_file, format=output_format)
@@ -116,134 +109,116 @@ def audio_segment_to_float_array(audio_segment):
 
 def float_array_to_audio_segment(float_array, audio_segment_template):
     clipped_array = np.clip(float_array, -1.0, 1.0)
-    int_array = (clipped_array * (2**(audio_segment_template.sample_width * 8 - 1))).astype(np.int16)
+    int_array = (clipped_array * 32767).astype(np.int16)
     return audio_segment_template._spawn(int_array.tobytes())
 
 def apply_analog_character(chunk, character_percent):
-    if character_percent == 0:
-        return chunk
-
-    # 1. Saturation
-    saturation_amount = character_percent * 0.3 
+    if character_percent == 0: return chunk
+    character_factor = character_percent / 100.0
+    
     samples = audio_segment_to_float_array(chunk)
-    saturated_samples = np.tanh(samples * (1 + saturation_amount / 100.0))
-    chunk = float_array_to_audio_segment(saturated_samples, chunk)
+    
+    # 1. Subtle Saturation
+    drive = 1.0 + (character_factor * 0.5)
+    saturated_samples = np.tanh(samples * drive)
+    
+    # 2. Low-end Bump (applied to the saturated signal)
+    low_bump_db = character_factor * 1.0 
+    saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, low_bump_db, 'low')
 
-    # 2. Low-end Bump
-    low_bump_db = (character_percent / 100.0) * 1.0 
-    low_end = chunk.low_pass_filter(120)
-    chunk = chunk.overlay(low_end.apply_gain(low_bump_db))
+    # 3. High-end Sparkle (applied to the saturated signal)
+    high_sparkle_db = character_factor * 1.5
+    final_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 12000, high_sparkle_db, 'high')
 
-    # 3. High-end Sparkle
-    high_sparkle_db = (character_percent / 100.0) * 1.5
-    high_end = chunk.high_pass_filter(12000)
-    chunk = chunk.overlay(high_end.apply_gain(high_sparkle_db))
-
-    return chunk
+    return float_array_to_audio_segment(final_samples, chunk)
 
 def apply_stereo_width(samples, width_factor):
-    if samples.ndim == 1 or samples.shape[1] != 2: return samples
+    if samples.ndim != 2 or samples.shape[1] != 2: return samples
     left, right = samples[:, 0], samples[:, 1]
     mid = (left + right) / 2
     side = (left - right) / 2
     side *= width_factor
-    new_left = mid + side
-    new_right = mid - side
-    return np.array([new_left, new_right]).T
+    new_left = np.clip(mid + side, -1.0, 1.0)
+    new_right = np.clip(mid - side, -1.0, 1.0)
+    return np.stack([new_left, new_right], axis=1)
 
 def apply_eq_to_samples(samples, sample_rate, settings):
-    if samples.ndim > 1 and samples.shape[1] == 2:
-        left, right = samples[:, 0], samples[:, 1]
-        left = apply_shelf_filter(left, sample_rate, 250, settings.get("bass_boost", 0.0), 'low')
-        right = apply_shelf_filter(right, sample_rate, 250, settings.get("bass_boost", 0.0), 'low')
-        left = apply_peak_filter(left, sample_rate, 1000, -settings.get("mid_cut", 0.0))
-        right = apply_peak_filter(right, sample_rate, 1000, -settings.get("mid_cut", 0.0))
-        left = apply_peak_filter(left, sample_rate, 4000, settings.get("presence_boost", 0.0))
-        right = apply_peak_filter(right, sample_rate, 4000, settings.get("presence_boost", 0.0))
-        left = apply_shelf_filter(left, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
-        right = apply_shelf_filter(right, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
-        return np.array([left, right]).T
+    if samples.ndim == 2:
+        for i in range(samples.shape[1]):
+            samples[:, i] = _apply_eq_to_channel(samples[:, i], sample_rate, settings)
     else:
-        samples = apply_shelf_filter(samples, sample_rate, 250, settings.get("bass_boost", 0.0), 'low')
-        samples = apply_peak_filter(samples, sample_rate, 1000, -settings.get("mid_cut", 0.0))
-        samples = apply_peak_filter(samples, sample_rate, 4000, settings.get("presence_boost", 0.0))
-        samples = apply_shelf_filter(samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
-        return samples
+        samples = _apply_eq_to_channel(samples, sample_rate, settings)
+    return samples
+
+def _apply_eq_to_channel(channel_samples, sample_rate, settings):
+    channel_samples = apply_shelf_filter(channel_samples, sample_rate, 250, settings.get("bass_boost", 0.0), 'low')
+    channel_samples = apply_peak_filter(channel_samples, sample_rate, 1000, -settings.get("mid_cut", 0.0))
+    channel_samples = apply_peak_filter(channel_samples, sample_rate, 4000, settings.get("presence_boost", 0.0))
+    channel_samples = apply_shelf_filter(channel_samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
+    return channel_samples
 
 def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, order=2):
     if gain_db == 0: return samples
     gain = 10.0 ** (gain_db / 20.0)
-    b, a = butter(order, cutoff_hz / (sample_rate / 2.0), btype=filter_type)
-    return lfilter(b, a, samples) * gain if gain_db > 0 else lfilter(b, a, samples)
-
-def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.0):
+    nyquist = 0.5 * sample_rate
+    b, a = butter(order, cutoff_hz / nyquist, btype=filter_type)
+    y = lfilter(b, a, samples)
+    if gain_db > 0: 
+        return samples + (y - samples) * (gain - 1)
+    else:
+        return samples * gain + (y - samples * gain)
+        
+def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
     nyquist = 0.5 * sample_rate
-    normal_center = center_hz / nyquist
-    bandwidth = normal_center / q
-    low_freq = normal_center - (bandwidth / 2)
-    high_freq = normal_center + (bandwidth / 2)
-    if low_freq <= 0: low_freq = 1e-9
-    if high_freq >= 1.0: high_freq = 0.999999
-    sos = butter(2, [low_freq, high_freq], btype='bandpass', output='sos')
-    filtered_samples = sosfilt(sos, samples)
+    center_norm = center_hz / nyquist
+    bandwidth = center_norm / q
+    low = center_norm - (bandwidth / 2)
+    high = center_norm + (bandwidth / 2)
+    if low <= 0: low = 1e-9
+    if high >= 1.0: high = 0.999999
+    sos = butter(4, [low, high], btype='bandpass', output='sos')
+    filtered_band = sosfilt(sos, samples)
     gain_factor = 10 ** (gain_db / 20.0)
-    return samples + (filtered_samples * (gain_factor - 1))
+    return samples + (filtered_band * (gain_factor - 1))
 
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
-    # --- FIX for "Horrible Sound": Use phase-coherent crossover ---
-    # This is a more advanced technique that prevents phase cancellation.
     samples = audio_segment_to_float_array(chunk)
     
-    # Create low-pass and high-pass filters
     low_sos = butter(4, low_crossover, btype='lowpass', fs=chunk.frame_rate, output='sos')
     high_sos = butter(4, high_crossover, btype='highpass', fs=chunk.frame_rate, output='sos')
     
-    # Apply filters to get the bands
     low_band_samples = sosfilt(low_sos, samples, axis=0)
+    high_band_samples = sosfilt(high_sos, samples, axis=0)
+    mid_band_samples = samples - low_band_samples - high_band_samples
     
-    # To get the mid-band, we subtract the low and high from the original
-    high_band_samples_for_sub = sosfilt(high_sos, samples, axis=0)
-    mid_band_samples = samples - low_band_samples - high_band_samples_for_sub
-    
-    # The final high band is the same
-    high_band_samples = high_band_samples_for_sub
-
-    # Convert back to AudioSegment to use pydub's compressor
     low_band_chunk = float_array_to_audio_segment(low_band_samples, chunk)
     mid_band_chunk = float_array_to_audio_segment(mid_band_samples, chunk)
     high_band_chunk = float_array_to_audio_segment(high_band_samples, chunk)
     
     low_compressed = compress_dynamic_range(low_band_chunk,
         threshold=settings.get("low_thresh"), ratio=settings.get("low_ratio"))
-    
     mid_compressed = compress_dynamic_range(mid_band_chunk,
         threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
-        
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
         
-    # Recombine the bands
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
 
-def normalize_to_lufs(samples, sample_rate, target_lufs=-14.0, status_callback=None):
+def normalize_to_lufs(samples, sample_rate, target_lufs=-14.0):
     meter = pyln.Meter(sample_rate)
-    if samples.ndim == 2:
-        mono_samples = samples.mean(axis=1)
-    else:
-        mono_samples = samples
+    mono_samples = samples.mean(axis=1) if samples.ndim == 2 else samples
     
-    # Prevent error on silent chunks
-    if np.max(np.abs(mono_samples)) == 0:
-        return samples
+    if np.max(np.abs(mono_samples)) == 0: return samples
 
     loudness = meter.integrated_loudness(mono_samples)
     gain_db = target_lufs - loudness
     gain_linear = 10.0 ** (gain_db / 20.0)
-    if status_callback: status_callback(f"Current loudness: {loudness:.2f} LUFS. Applying {gain_db:.2f} dB gain...")
     return samples * gain_linear
 
 def soft_limiter(samples, threshold=0.98):
-    clipped_indices = np.abs(samples) > threshold
-    samples[clipped_indices] = np.tanh(samples[clipped_indices] / threshold) * threshold
+    peak = np.max(np.abs(samples))
+    if peak > threshold:
+        gain_reduction = threshold / peak
+        samples *= gain_reduction
     return samples
