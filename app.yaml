@@ -1,4 +1,4 @@
-# app.yaml (Updated for Custom Docker Runtime)
+# app.yaml (Corrected for Flexible Environment Scaling)
 # This configuration uses the App Engine Flexible Environment to run a custom
 # Docker container, which is necessary for installing system dependencies like FFmpeg.
 
@@ -13,7 +13,8 @@ resources:
   disk_size_gb: 10
   
 automatic_scaling:
-  min_num_instances: 0
+  # The minimum number of instances for env:flex must be 1 or greater.
+  min_num_instances: 1
   max_num_instances: 2 # Increase this if you expect high traffic
   cool_down_period_sec: 180
   cpu_utilization:
@@ -26,3 +27,4 @@ skip_files:
 - .gcloudignore
 - .git/
 - .gitignore
+
