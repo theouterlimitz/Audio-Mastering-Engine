@@ -1,11 +1,13 @@
 # This is the master blueprint for our Google App Engine application.
 # This version uses the modern, explicit entrypoint syntax required
-# by the Python 3.11 runtime.
+# by the Python 3.11 runtime, with correct YAML formatting.
 
 runtime: python311
 
-# This is the corrected, single-line syntax for the startup command.
-entrypoint: gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
+# This is the corrected, modern syntax for the startup command.
+# The '|' character tells YAML to treat the following as a single block of text.
+entrypoint: >
+  gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
 
 instance_class: F2
 
