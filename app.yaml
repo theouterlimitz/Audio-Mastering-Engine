@@ -5,38 +5,10 @@
 runtime: python311
 
 # This is the corrected, single-line syntax for the startup command.
-entrypoint: gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+entrypoint: gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
 
 instance_class: F2
 
 automatic_scaling:
   min_instances: 0
   max_instances: 1
-```
-
----
-### The Final Push and Deployment (For Real This Time)
-
-Now that you have the correct and fully verified blueprint, the final step is to push it to GitHub and then run our deployment command one last time.
-
-**A. Push the Final Fix to GitHub:**
-
-```bash
-# Add the final corrected app.yaml file
-git add app.yaml
-
-# Commit the final fix
-git commit -m "fix: Correct entrypoint syntax in app.yaml for Python 3.11 runtime"
-
-# Push the final blueprint to GitHub
-git push
-```
-
-**B. The Final Deployment:**
-
-* Now, run the definitive deployment command in your terminal:
-
-    ```bash
-    gcloud app deploy
-    
-
