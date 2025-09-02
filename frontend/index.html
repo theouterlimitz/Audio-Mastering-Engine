@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Python Audio Mastering Suite</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4F46E5;
+            cursor: pointer;
+            border-radius: 50%;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen">
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
+        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite</h1>
+        <p class="text-center text-gray-400 mb-8">Upload your track and apply professional mastering effects.</p>
+
+        <form id="uploadForm" class="space-y-6">
+            <!-- File Selection -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <h2 class="text-lg font-semibold mb-3 text-indigo-400">1. Select File</h2>
+                <div class="flex items-center space-x-4">
+                    <label for="fileInput" class="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300">
+                        Choose File
+                    </label>
+                    <input type="file" id="fileInput" class="hidden">
+                    <span id="fileName" class="text-gray-400 truncate">No file selected</span>
+                </div>
+            </div>
+            
+            <!-- Parameters -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                 <h2 class="text-lg font-semibold mb-4 text-indigo-400">2. Adjust Parameters</h2>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <div>
+                        <label for="saturation" class="block text-sm font-medium text-gray-300">Saturation (%)</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="0" max="100" value="10" step="1" id="saturation" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="saturationValue" class="text-sm font-mono text-indigo-300 w-12 text-right">10 %</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="bass" class="block text-sm font-medium text-gray-300">Bass (dB)</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="-6" max="6" value="0" step="0.5" id="bass" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="bassValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="mid" class="block text-sm font-medium text-gray-300">Mid Cut (dB)</label>
+                         <div class="flex items-center space-x-3">
+                            <input type="range" min="0" max="6" value="0" step="0.5" id="mid" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="midValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="presence" class="block text-sm font-medium text-gray-300">Presence (dB)</label>
+                         <div class="flex items-center space-x-3">
+                            <input type="range" min="-6" max="6" value="0" step="0.5" id="presence" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="presenceValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="treble" class="block text-sm font-medium text-gray-300">Treble (dB)</label>
+                         <div class="flex items-center space-x-3">
+                            <input type="range" min="-6" max="6" value="0" step="0.5" id="treble" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="trebleValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label for="width" class="block text-sm font-medium text-gray-300">Stereo Width</label>
+                         <div class="flex items-center space-x-3">
+                            <input type="range" min="0" max="2" value="1" step="0.05" id="width" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="widthValue" class="text-sm font-mono text-indigo-300 w-12 text-right">1.00 x</span>
+                        </div>
+                    </div>
+                    <div class="md:col-span-2">
+                         <label for="lufs" class="block text-sm font-medium text-gray-300">Target LUFS</label>
+                         <div class="flex items-center space-x-3">
+                            <input type="range" min="-20" max="-6" value="-14" step="0.5" id="lufs" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="lufsValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-14.0 LUFS</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Multiband -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <div class="flex items-center">
+                    <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
+                    <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
+                </div>
+                
+                <!-- NEW: Div for the controls, initially hidden -->
+                <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <!-- Low Band -->
+                     <div>
+                        <label for="low_thresh" class="block text-sm font-medium text-gray-400">Low Thresh (dB)</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="lowThreshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25 dB</span>
+                        </div>
+                    </div>
+                     <div>
+                        <label for="low_ratio" class="block text-sm font-medium text-gray-400">Low Ratio</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="lowRatioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0:1</span>
+                        </div>
+                    </div>
+                    <!-- Mid Band -->
+                     <div>
+                        <label for="mid_thresh" class="block text-sm font-medium text-gray-400">Mid Thresh (dB)</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="midThreshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20 dB</span>
+                        </div>
+                    </div>
+                     <div>
+                        <label for="mid_ratio" class="block text-sm font-medium text-gray-400">Mid Ratio</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="midRatioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0:1</span>
+                        </div>
+                    </div>
+                    <!-- High Band -->
+                     <div>
+                        <label for="high_thresh" class="block text-sm font-medium text-gray-400">High Thresh (dB)</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="highThreshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15 dB</span>
+                        </div>
+                    </div>
+                     <div>
+                        <label for="high_ratio" class="block text-sm font-medium text-gray-400">High Ratio</label>
+                        <div class="flex items-center space-x-3">
+                            <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                            <span id="highRatioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0:1</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Button and Status -->
+            <div>
+                <button type="submit" id="submitButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 flex items-center justify-center">
+                    Upload & Process
+                </button>
+                <div id="status" class="mt-4 text-center text-gray-400 h-6"></div>
+                <div id="downloadContainer" class="mt-4 text-center"></div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const statusDisplay = document.getElementById('status');
+        const downloadContainer = document.getElementById('downloadContainer');
+        const submitButton = document.getElementById('submitButton');
+        const useMultibandCheckbox = document.getElementById('useMultiband');
+        const multibandControls = document.getElementById('multibandControls');
+        
+        const API_BASE_URL = 'https://python-audio-backend-1015299845182.us-central1.run.app';
+
+        // Slider value displays
+        const sliders = [
+            { id: 'saturation', display: 'saturationValue', unit: ' %' },
+            { id: 'bass', display: 'bassValue', unit: ' dB' },
+            { id: 'mid', display: 'midValue', unit: ' dB' },
+            { id: 'presence', display: 'presenceValue', unit: ' dB' },
+            { id: 'treble', display: 'trebleValue', unit: ' dB' },
+            { id: 'width', display: 'widthValue', unit: ' x' },
+            { id: 'lufs', display: 'lufsValue', unit: ' LUFS' },
+            { id: 'low_thresh', display: 'lowThreshValue', unit: ' dB' },
+            { id: 'low_ratio', display: 'lowRatioValue', unit: ':1' },
+            { id: 'mid_thresh', display: 'midThreshValue', unit: ' dB' },
+            { id: 'mid_ratio', display: 'midRatioValue', unit: ':1' },
+            { id: 'high_thresh', display: 'highThreshValue', unit: ' dB' },
+            { id: 'high_ratio', display: 'highRatioValue', unit: ':1' }
+        ];
+
+        sliders.forEach(slider => {
+            const input = document.getElementById(slider.id);
+            const display = document.getElementById(slider.display);
+            if (input && display) {
+                input.addEventListener('input', () => {
+                    let value = parseFloat(input.value).toFixed(slider.id.includes('width') || slider.id.includes('ratio') ? 2 : 1);
+                    if (slider.id === 'saturation' || slider.id.includes('thresh')) value = parseInt(input.value);
+                    if (slider.id.includes('ratio')) value = parseFloat(input.value).toFixed(1);
+                    display.textContent = `${value}${slider.unit}`;
+                });
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            fileNameDisplay.textContent = fileInput.files[0] ? fileInput.files[0].name : 'No file selected';
+        });
+
+        // --- NEW: Event listener to toggle the multiband controls ---
+        useMultibandCheckbox.addEventListener('change', () => {
+            multibandControls.classList.toggle('hidden', !useMultibandCheckbox.checked);
+        });
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus('Error: Please select a file.', true);
+                return;
+            }
+
+            setProcessingState(true, 'Getting ready...');
+
+            const settings = {
+                bass_boost: parseFloat(document.getElementById('bass').value),
+                mid_cut: parseFloat(document.getElementById('mid').value),
+                presence_boost: parseFloat(document.getElementById('presence').value),
+                treble_boost: parseFloat(document.getElementById('treble').value),
+                width: parseFloat(document.getElementById('width').value),
+                lufs: parseFloat(document.getElementById('lufs').value),
+                saturation: parseInt(document.getElementById('saturation').value),
+                multiband: document.getElementById('useMultiband').checked,
+                low_thresh: parseFloat(document.getElementById('low_thresh').value),
+                low_ratio: parseFloat(document.getElementById('low_ratio').value),
+                mid_thresh: parseFloat(document.getElementById('mid_thresh').value),
+                mid_ratio: parseFloat(document.getElementById('mid_ratio').value),
+                high_thresh: parseFloat(document.getElementById('high_thresh').value),
+                high_ratio: parseFloat(document.getElementById('high_ratio').value),
+                original_filename: file.name
+            };
+
+            try {
+                // STEP 1: Get the secure upload URL from our backend
+                showStatus('Requesting upload permission...');
+                const presignedResponse = await fetch(`${API_BASE_URL}/generate-upload-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: file.name, contentType: file.type })
+                });
+
+                if (!presignedResponse.ok) throw new Error('Could not get upload URL from server.');
+                
+                const { url, gcs_uri } = await presignedResponse.json();
+
+                // STEP 2: Upload the file DIRECTLY to Google Cloud Storage
+                showStatus('Uploading file...');
+                await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type },
+                    body: file
+                });
+                
+                // STEP 3: Tell our backend to start the processing job
+                showStatus('Starting processing job...');
+                const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
+                });
+                
+                if (!startResponse.ok) throw new Error('Could not start processing job.');
+
+                const { processed_filename } = await startResponse.json();
+                
+                // STEP 4: Start polling for the result
+                pollForStatus(processed_filename);
+
+            } catch (error) {
+                console.error('Upload process failed:', error);
+                showStatus(`Error: ${error.message}`, true);
+                setProcessingState(false);
+            }
+        });
+
+        function pollForStatus(filename) {
+            showStatus('Processing in the cloud... (this may take several minutes)');
+            const interval = setInterval(async () => {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/status?filename=${encodeURIComponent(filename)}`);
+                    const data = await response.json();
+
+                    if (data.status === 'done' && data.download_url) {
+                        clearInterval(interval);
+                        showStatus('Processing complete!', false);
+                        setProcessingState(false);
+                        showDownloadButton(data.download_url);
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        showStatus(`Error: ${data.message}`, true);
+                         setProcessingState(false);
+                    }
+                } catch (error) {
+                    clearInterval(interval);
+                    showStatus('Error: Could not check status.', true);
+                     setProcessingState(false);
+                }
+            }, 10000);
+        }
+
+        function showStatus(message, isError = false) {
+            statusDisplay.textContent = message;
+            statusDisplay.style.color = isError ? '#F87171' : '#8B949E';
+        }
+
+        function setProcessingState(isProcessing, message = "Upload & Process") {
+            submitButton.disabled = isProcessing;
+            if (isProcessing) {
+                submitButton.textContent = message;
+                submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.add('bg-gray-600', 'cursor-not-allowed');
+                downloadContainer.innerHTML = ''; 
+            } else {
+                submitButton.textContent = message;
+                submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.remove('bg-gray-600', 'cursor-not-allowed');
+            }
+        }
+        
+        function showDownloadButton(url) {
+            downloadContainer.innerHTML = `
+                <a href="${url}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300">
+                    Download Mastered File
+                </a>`;
+        }
+
+    </script>
+</body>
+</html>
