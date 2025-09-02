@@ -1,7 +1,7 @@
-# main.py (App Engine Version - Corrected)
+# main.py (App Engine Version)
 #
-# This version uses App Engine Tasks correctly and calls the new GCS-aware
-# function in our mastering engine.
+# This is the unified, monolithic application for our Google App Engine deployment.
+# It serves the frontend, handles API requests, and manages background tasks.
 
 import os
 import json
@@ -11,26 +11,34 @@ from flask import Flask, render_template, request, jsonify
 # Import the necessary Google Cloud libraries
 from google.cloud import storage
 from google.cloud import tasks_v2
+import google.auth # Import the google.auth library
 
 # Import our known-good mastering engine!
-# We only need the GCS function for this cloud application.
+# It's in the same directory, so the import is simple.
 from audio_mastering_engine import process_audio_from_gcs
 
 app = Flask(__name__)
 
 # --- Configuration ---
-GCP_PROJECT_ID = os.environ.get('GCP_PROJECT_ID')
+# Get the project ID automatically from the environment. This is the robust way.
+try:
+    _, GCP_PROJECT_ID = google.auth.default()
+except google.auth.exceptions.DefaultCredentialsError:
+    # If running locally or in a non-GCP env, you might need to set this manually
+    GCP_PROJECT_ID = os.environ.get('GCP_PROJECT', None)
+    if not GCP_PROJECT_ID:
+        raise RuntimeError("GCP_PROJECT_ID could not be determined.")
+
+
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
-TASK_QUEUE = 'mastering-queue'
-TASK_LOCATION = 'us-central1' 
+TASK_QUEUE = 'mastering-queue' # The name for our background job queue
+TASK_LOCATION = 'us-central1' # The region for our queue
 
 # Initialize the clients for Google Cloud services
 storage_client = storage.Client()
 tasks_client = tasks_v2.CloudTasksClient()
 
 # --- Frontend Route ---
-# This serves your index.html from a 'templates' folder.
-# Ensure your index.html is inside a folder named 'templates'.
 @app.route('/')
 def index():
     """Serves the main index.html page."""
@@ -44,13 +52,10 @@ def generate_upload_url():
     if not data or 'filename' not in data:
         return jsonify({"error": "Filename not provided"}), 400
 
-    # Sanitize filename to prevent security issues
-    safe_filename = "".join(c for c in data['filename'] if c.isalnum() or c in ('.', '_', '-')).strip()
-    blob_name = f"raw_uploads/{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}_{safe_filename}"
-
     bucket = storage_client.bucket(BUCKET_NAME)
-    blob = bucket.blob(blob_name)
+    blob = bucket.blob(f"raw_uploads/{data['filename']}")
 
+    # Generate a V4 signed URL. App Engine uses its attached service account automatically.
     url = blob.generate_signed_url(
         version="v4",
         expiration=datetime.timedelta(minutes=15),
@@ -58,7 +63,7 @@ def generate_upload_url():
         content_type=data.get('contentType', 'application/octet-stream'),
     )
     
-    gcs_uri = f"gs://{BUCKET_NAME}/{blob_name}"
+    gcs_uri = f"gs://{BUCKET_NAME}/raw_uploads/{data['filename']}"
     return jsonify({"url": url, "gcs_uri": gcs_uri}), 200
 
 @app.route('/start-processing', methods=['POST'])
@@ -68,9 +73,8 @@ def start_processing():
     if not data or 'gcs_uri' not in data or 'settings' not in data:
         return jsonify({"error": "Missing GCS URI or settings"}), 400
 
+    # Create a task and add it to the queue.
     parent = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
-    
-    # Use App Engine HTTP Request for reliable task routing
     task = {
         "app_engine_http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
@@ -112,7 +116,10 @@ def get_status():
 # --- Background Worker Route ---
 @app.route('/process-task', methods=['POST'])
 def process_task():
-    """This endpoint is called by Cloud Tasks to run the mastering engine."""
+    """
+    This is the endpoint that our background task queue calls.
+    It receives the job data and runs the actual mastering engine.
+    """
     job_data = json.loads(request.data.decode('utf-8'))
     gcs_uri = job_data.get('gcs_uri')
     settings = job_data.get('settings')
@@ -122,13 +129,25 @@ def process_task():
         return "Bad Request: Invalid task data", 400
 
     try:
+        # We need to make sure the task queue exists.
+        # This is a one-time check that's safe to run every time.
+        parent = f"projects/{GCP_PROJECT_ID}/locations/{TASK_LOCATION}"
+        queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
+        try:
+            tasks_client.get_queue(name=queue_path)
+        except Exception:
+             tasks_client.create_queue(parent=parent, queue={"name": queue_path})
+             
         print(f"Starting background processing for {gcs_uri}")
         process_audio_from_gcs(gcs_uri, settings)
         print(f"Successfully completed processing for {gcs_uri}")
-        return "OK", 200 
+        return "OK", 200 # A success code tells the task queue the job is done.
     except Exception as e:
         print(f"CRITICAL ERROR processing {gcs_uri}: {e}")
+        # Return an error code so the task queue knows to retry the job.
         return "Internal Server Error", 500
 
 if __name__ == '__main__':
+    # This is used for local testing. On App Engine, Gunicorn runs the 'app' object.
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
