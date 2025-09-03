@@ -1,8 +1,9 @@
-# main.py (Final, Corrected Version v2)
+# main.py (Final, Simplified Version)
 #
-# This version corrects the call to generate_signed_url. It passes the
-# iam.Signer object directly without trying to call the non-existent
-# get_access_token() method. This is the correct usage.
+# This version reverts to the simple, clean method of generating signed URLs.
+# It relies on the underlying library to automatically use the IAM API,
+# which will work once the correct 'iam.serviceAccounts.signBlob'
+# permission is granted to the service account.
 
 import os
 import json
@@ -12,16 +13,12 @@ from flask import Flask, render_template, request, jsonify
 
 from google.cloud import storage
 from google.cloud import tasks_v2
-# --- CORRECT IMPORTS FOR SIGNING ---
 import google.auth
-from google.auth.transport.requests import Request
-from google.auth import iam
 
 app = Flask(__name__)
 
 # --- Configuration ---
 try:
-    # Get the default credentials and project ID from the environment
     credentials, GCP_PROJECT_ID = google.auth.default()
 except google.auth.exceptions.DefaultCredentialsError:
     GCP_PROJECT_ID = os.environ.get('GCP_PROJECT', None)
@@ -30,7 +27,6 @@ except google.auth.exceptions.DefaultCredentialsError:
 
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
-# Match the region from your `gcloud app create` command
 TASK_LOCATION = 'us-east1' 
 
 storage_client = storage.Client()
@@ -41,7 +37,7 @@ tasks_client = tasks_v2.CloudTasksClient()
 def index():
     return render_template('index.html')
 
-# --- API Endpoints (Updated with Correct Signer Usage) ---
+# --- API Endpoints ---
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     try:
@@ -52,19 +48,17 @@ def generate_upload_url():
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"raw_uploads/{data['filename']}")
         
+        # The service account that will be used to sign the URL.
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
         
-        # Create an IAM signer using the application's default credentials.
-        signer = iam.Signer(Request(), credentials, service_account_email)
-
-        # THE FIX IS HERE: We pass the signer directly and do NOT call get_access_token().
+        # This is the simple, correct call. The library will use the attached
+        # service account and its IAM permissions to handle the signing.
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
             service_account_email=service_account_email,
-            signer=signer
         )
         
         gcs_uri = f"gs://{BUCKET_NAME}/raw_uploads/{data['filename']}"
@@ -128,14 +122,11 @@ def get_status():
              return jsonify({"status": "error", "message": "Processing complete but output file is missing."}), 404
         
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
-        signer = iam.Signer(Request(), credentials, service_account_email)
         
-        # THE FIX IS HERE AS WELL.
         download_url = audio_blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=60),
             service_account_email=service_account_email,
-            signer=signer
         )
         return jsonify({"status": "done", "download_url": download_url}), 200
     except Exception as e:
