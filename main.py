@@ -1,7 +1,8 @@
-# main.py (Final, Corrected Version)
+# main.py (Final, Corrected Version v2)
 #
-# This version uses the official `google.auth.iam.Signer` to explicitly
-# use the IAM API for signing URLs. This is the correct and most robust method.
+# This version corrects the call to generate_signed_url. It passes the
+# iam.Signer object directly without trying to call the non-existent
+# get_access_token() method. This is the correct usage.
 
 import os
 import json
@@ -40,7 +41,7 @@ tasks_client = tasks_v2.CloudTasksClient()
 def index():
     return render_template('index.html')
 
-# --- API Endpoints (Updated with Correct Signer) ---
+# --- API Endpoints (Updated with Correct Signer Usage) ---
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     try:
@@ -54,16 +55,15 @@ def generate_upload_url():
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
         
         # Create an IAM signer using the application's default credentials.
-        # This is the correct way to request a signature from the IAM API.
         signer = iam.Signer(Request(), credentials, service_account_email)
 
+        # THE FIX IS HERE: We pass the signer directly and do NOT call get_access_token().
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
             service_account_email=service_account_email,
-            access_token=signer.get_access_token(),
             signer=signer
         )
         
@@ -76,12 +76,11 @@ def generate_upload_url():
 
 @app.route('/start-processing', methods=['POST'])
 def start_processing():
-    # This function is correct and does not need changes
     try:
         data = request.get_json()
         if not data or 'gcs_uri' not in data or 'settings' not in data:
             return jsonify({"error": "Missing GCS URI or settings"}), 400
-
+        
         parent = f"projects/{GCP_PROJECT_ID}/locations/{TASK_LOCATION}"
         queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
         try:
@@ -92,7 +91,7 @@ def start_processing():
             except Exception as create_err:
                  if "already exists" not in str(create_err):
                      raise create_err
-            
+
         task = {
             "app_engine_http_request": {
                 "http_method": tasks_v2.HttpMethod.POST,
@@ -131,11 +130,11 @@ def get_status():
         service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
         signer = iam.Signer(Request(), credentials, service_account_email)
         
+        # THE FIX IS HERE AS WELL.
         download_url = audio_blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=60),
             service_account_email=service_account_email,
-            access_token=signer.get_access_token(),
             signer=signer
         )
         return jsonify({"status": "done", "download_url": download_url}), 200
