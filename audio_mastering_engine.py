@@ -1,8 +1,6 @@
-# audio_mastering_engine.py (v2.5 - App Engine Cloud Version)
-#
-# This version includes the original processing logic and adds a new
-# wrapper function 'process_audio_from_gcs' to handle file operations
-# with Google Cloud Storage, making it compatible with the App Engine environment.
+# audio_mastering_engine.py (The One True Final Version)
+# This version is updated to accept a service account key file, allowing it
+# to authenticate with Google Cloud Storage when running in a background task.
 
 import os
 import numpy as np
@@ -14,24 +12,16 @@ import traceback
 import tempfile
 from google.cloud import storage
 
-# --- PRESET DEFINITIONS ---
-EQ_PRESETS = {
-    "techno": { "bass_boost": 4.0, "mid_cut": 3.0, "presence_boost": 1.0, "treble_boost": 3.0 },
-    "dubstep": { "bass_boost": 5.0, "mid_cut": 4.0, "presence_boost": 2.0, "treble_boost": 3.5 },
-    "pop": { "bass_boost": 2.0, "mid_cut": 0.0, "presence_boost": 3.5, "treble_boost": 2.5 },
-    "rock": { "bass_boost": 1.5, "mid_cut": -2.0, "presence_boost": 2.5, "treble_boost": 1.0 }
-}
+# --- GCS-AWARE PROCESSING FUNCTION ---
 
-# --- GCS WRAPPER FUNCTION (FOR CLOUD USE) ---
-
-def process_audio_from_gcs(gcs_uri, settings):
+def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     """
-    Downloads a file from GCS, processes it using the existing local engine,
-    and uploads the result back to GCS.
+    Downloads a file from GCS, processes it using the existing engine,
+    and uploads the result back to GCS. It uses a key file for auth.
     """
-    storage_client = storage.Client()
+    # Initialize the client inside the function, as this runs in a separate process.
+    storage_client = storage.Client.from_service_account_json(key_file_path)
     
-    # 1. Parse GCS URI to get bucket and blob name
     if not gcs_uri.startswith('gs://'):
         raise ValueError("Invalid GCS URI")
     bucket_name, blob_name = gcs_uri[5:].split('/', 1)
@@ -39,7 +29,6 @@ def process_audio_from_gcs(gcs_uri, settings):
     bucket = storage_client.bucket(bucket_name)
     input_blob = bucket.blob(blob_name)
 
-    # 2. Download the file to a temporary location
     with tempfile.NamedTemporaryFile(suffix=os.path.splitext(blob_name)[1]) as temp_in:
         print(f"Downloading {gcs_uri} to {temp_in.name}")
         input_blob.download_to_filename(temp_in.name)
@@ -47,33 +36,28 @@ def process_audio_from_gcs(gcs_uri, settings):
         original_filename = settings.get('original_filename', 'unknown.wav')
         output_filename = f"mastered_{original_filename}"
         
-        # Use another temporary file for the output
         with tempfile.NamedTemporaryFile(suffix=".wav") as temp_out:
-            
-            # 3. Use your existing process_audio function for local files
             new_settings = settings.copy()
             new_settings["input_file"] = temp_in.name
             new_settings["output_file"] = temp_out.name
             
-            # This is your original, unchanged processing function
+            # This is the original, local-file processing function
             process_audio(new_settings)
 
-            # 4. Upload the processed file back to GCS
             output_blob_name = f"processed/{output_filename}"
             output_blob = bucket.blob(output_blob_name)
             
             print(f"Uploading processed file to gs://{bucket_name}/{output_blob_name}")
             output_blob.upload_from_filename(temp_out.name, content_type='audio/wav')
             
-            # 5. Create a ".complete" flag file for the status checker
             complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
             complete_flag_blob.upload_from_string("done")
 
-# --- CORE PROCESSING LOGIC (FOR LOCAL FILES) ---
+# --- CORE LOCAL PROCESSING LOGIC ---
 
 def process_audio(settings, status_callback=None, progress_callback=None):
     """
-    The main audio processing function, works with local file paths.
+    The main audio processing function. Works with local file paths.
     """
     try:
         input_file = settings.get("input_file")
@@ -86,11 +70,10 @@ def process_audio(settings, status_callback=None, progress_callback=None):
         if status_callback: status_callback(f"Loading and preparing audio file: {input_file}")
         audio = AudioSegment.from_file(input_file)
         
-        # Professional standard: ensure we are working with stereo 16-bit audio
         if audio.channels == 1:
             audio = audio.set_channels(2)
         if audio.sample_width != 2:
-            audio = audio.set_sample_width(2) # 2 bytes = 16 bits
+            audio = audio.set_sample_width(2)
         
         chunk_size_ms = 30 * 1000
         processed_chunks = []
@@ -100,23 +83,18 @@ def process_audio(settings, status_callback=None, progress_callback=None):
         for i, start_ms in enumerate(range(0, len(audio), chunk_size_ms)):
             chunk = audio[start_ms:start_ms+chunk_size_ms]
             
-            # Apply Analog Character
             if settings.get("analog_character", 0) > 0:
                 chunk = apply_analog_character(chunk, settings.get("analog_character"))
 
-            # Convert to float array for SciPy processing
             chunk_samples = audio_segment_to_float_array(chunk)
             
-            # Apply EQ
             processed_samples = apply_eq_to_samples(chunk_samples, chunk.frame_rate, settings)
             
-            # Apply Stereo Width
             if settings.get("width", 1.0) != 1.0:
                 processed_samples = apply_stereo_width(processed_samples, settings.get("width"))
                 
             processed_chunk = float_array_to_audio_segment(processed_samples, chunk)
             
-            # Apply Compressor
             if settings.get("multiband"):
                 processed_chunk = apply_multiband_compressor(processed_chunk, settings)
             
@@ -168,15 +146,12 @@ def apply_analog_character(chunk, character_percent):
     
     samples = audio_segment_to_float_array(chunk)
     
-    # 1. Subtle Saturation
     drive = 1.0 + (character_factor * 0.5)
     saturated_samples = np.tanh(samples * drive)
     
-    # 2. Low-end Bump (applied to the saturated signal)
     low_bump_db = character_factor * 1.0 
     saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, low_bump_db, 'low')
 
-    # 3. High-end Sparkle (applied to the saturated signal)
     high_sparkle_db = character_factor * 1.5
     final_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 12000, high_sparkle_db, 'high')
 
@@ -272,3 +247,4 @@ def soft_limiter(samples, threshold=0.98):
         gain_reduction = threshold / peak
         samples *= gain_reduction
     return samples
+
