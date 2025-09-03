@@ -1,9 +1,9 @@
-# main.py (Final, Simplified Version)
+# main.py (Final, Bulletproof Version)
 #
-# This version reverts to the simple, clean method of generating signed URLs.
-# It relies on the underlying library to automatically use the IAM API,
-# which will work once the correct 'iam.serviceAccounts.signBlob'
-# permission is granted to the service account.
+# This version takes complete control. It loads a dedicated service account key
+# from a file, creates its own credentials, and uses those credentials to
+# initialize the storage client. This bypasses all App Engine default credential
+# issues and performs the signing explicitly with the provided private key.
 
 import os
 import json
@@ -18,18 +18,21 @@ import google.auth
 app = Flask(__name__)
 
 # --- Configuration ---
+# We still need the project ID for other services like Cloud Tasks.
 try:
-    credentials, GCP_PROJECT_ID = google.auth.default()
+    _, GCP_PROJECT_ID = google.auth.default()
 except google.auth.exceptions.DefaultCredentialsError:
-    GCP_PROJECT_ID = os.environ.get('GCP_PROJECT', None)
-    if not GCP_PROJECT_ID:
-        raise RuntimeError("GCP_PROJECT_ID could not be determined.")
+    GCP_PROJECT_ID = os.environ.get('GCP_PROJECT', 'audio-mastering-v2')
 
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
 TASK_LOCATION = 'us-east1' 
 
-storage_client = storage.Client()
+# --- THE BULLETPROOF FIX ---
+# Load credentials and initialize a storage client from our dedicated service account key file.
+# This client has its own identity and private key for signing.
+KEY_FILE_PATH = 'sa-key.json'
+storage_client = storage.Client.from_service_account_json(KEY_FILE_PATH)
 tasks_client = tasks_v2.CloudTasksClient()
 
 # --- Frontend Route ---
@@ -48,17 +51,12 @@ def generate_upload_url():
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"raw_uploads/{data['filename']}")
         
-        # The service account that will be used to sign the URL.
-        service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
-        
-        # This is the simple, correct call. The library will use the attached
-        # service account and its IAM permissions to handle the signing.
+        # The client, initialized with the key, handles signing automatically.
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
-            service_account_email=service_account_email,
         )
         
         gcs_uri = f"gs://{BUCKET_NAME}/raw_uploads/{data['filename']}"
@@ -121,12 +119,9 @@ def get_status():
         if not audio_blob.exists():
              return jsonify({"status": "error", "message": "Processing complete but output file is missing."}), 404
         
-        service_account_email = f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
-        
         download_url = audio_blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=60),
-            service_account_email=service_account_email,
         )
         return jsonify({"status": "done", "download_url": download_url}), 200
     except Exception as e:
@@ -135,6 +130,7 @@ def get_status():
 
 @app.route('/process-task', methods=['POST'])
 def process_task():
+    # The background worker needs to use the key file as well.
     from audio_mastering_engine import process_audio_from_gcs
     job_data = json.loads(request.data.decode('utf-8'))
     gcs_uri = job_data.get('gcs_uri')
@@ -146,13 +142,13 @@ def process_task():
 
     try:
         print(f"Starting background processing for {gcs_uri}")
-        process_audio_from_gcs(gcs_uri, settings)
+        # We pass the key file path to the background worker
+        process_audio_from_gcs(gcs_uri, settings, KEY_FILE_PATH)
         print(f"Successfully completed processing for {gcs_uri}")
         return "OK", 200
     except Exception as e:
         print(f"CRITICAL ERROR processing {gcs_uri}: {traceback.format_exc()}")
         return "Internal Server Error", 500
-
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
