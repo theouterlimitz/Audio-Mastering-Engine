@@ -1,9 +1,8 @@
-# main.py (Final, Bulletproof Version)
+# main.py (Final Version with Full Error Reporting)
 #
-# This version takes complete control. It loads a dedicated service account key
-# from a file, creates its own credentials, and uses those credentials to
-# initialize the storage client. This bypasses all App Engine default credential
-# issues and performs the signing explicitly with the provided private key.
+# This version adds detailed error reporting to the /start-processing endpoint.
+# If anything goes wrong during task creation, the full Python traceback
+# will be sent to the browser for definitive debugging.
 
 import os
 import json
@@ -14,11 +13,12 @@ from flask import Flask, render_template, request, jsonify
 from google.cloud import storage
 from google.cloud import tasks_v2
 import google.auth
+from google.auth.transport.requests import Request
+from google.iam.credentials_v1 import iam_credentials_client
 
 app = Flask(__name__)
 
 # --- Configuration ---
-# We still need the project ID for other services like Cloud Tasks.
 try:
     _, GCP_PROJECT_ID = google.auth.default()
 except google.auth.exceptions.DefaultCredentialsError:
@@ -28,9 +28,6 @@ BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
 TASK_LOCATION = 'us-east1' 
 
-# --- THE BULLETPROOF FIX ---
-# Load credentials and initialize a storage client from our dedicated service account key file.
-# This client has its own identity and private key for signing.
 KEY_FILE_PATH = 'sa-key.json'
 storage_client = storage.Client.from_service_account_json(KEY_FILE_PATH)
 tasks_client = tasks_v2.CloudTasksClient()
@@ -51,7 +48,6 @@ def generate_upload_url():
         bucket = storage_client.bucket(BUCKET_NAME)
         blob = bucket.blob(f"raw_uploads/{data['filename']}")
         
-        # The client, initialized with the key, handles signing automatically.
         url = blob.generate_signed_url(
             version="v4",
             expiration=datetime.timedelta(minutes=15),
@@ -64,7 +60,7 @@ def generate_upload_url():
 
     except Exception as e:
         print("ERROR in generate_upload_url:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}"}), 500
+        return jsonify({"error": f"Backend Error: {traceback.format_exc()}"}), 500
 
 @app.route('/start-processing', methods=['POST'])
 def start_processing():
@@ -75,6 +71,8 @@ def start_processing():
         
         parent = f"projects/{GCP_PROJECT_ID}/locations/{TASK_LOCATION}"
         queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
+        
+        # This "get or create" logic for the queue is now covered by the new permission.
         try:
             tasks_client.get_queue(name=queue_path)
         except Exception:
@@ -98,8 +96,11 @@ def start_processing():
         processed_filename = f"processed/mastered_{original_filename}"
         return jsonify({"message": "Processing job started.", "processed_filename": processed_filename}), 200
     except Exception as e:
-        print("ERROR in start_processing:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}"}), 500
+        # --- THE FINAL DEBUGGING FIX ---
+        # If any part of the process above fails, send the full error to the browser.
+        error_details = traceback.format_exc()
+        print("ERROR in start_processing:", error_details)
+        return jsonify({"error": f"Backend Error: {error_details}"}), 500
 
 
 @app.route('/status', methods=['GET'])
@@ -126,11 +127,10 @@ def get_status():
         return jsonify({"status": "done", "download_url": download_url}), 200
     except Exception as e:
         print("ERROR in get_status:", traceback.format_exc())
-        return jsonify({"error": f"Backend Error: {e}"}), 500
+        return jsonify({"error": f"Backend Error: {traceback.format_exc()}"}), 500
 
 @app.route('/process-task', methods=['POST'])
 def process_task():
-    # The background worker needs to use the key file as well.
     from audio_mastering_engine import process_audio_from_gcs
     job_data = json.loads(request.data.decode('utf-8'))
     gcs_uri = job_data.get('gcs_uri')
@@ -142,7 +142,6 @@ def process_task():
 
     try:
         print(f"Starting background processing for {gcs_uri}")
-        # We pass the key file path to the background worker
         process_audio_from_gcs(gcs_uri, settings, KEY_FILE_PATH)
         print(f"Successfully completed processing for {gcs_uri}")
         return "OK", 200
