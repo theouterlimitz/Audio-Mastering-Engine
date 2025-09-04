@@ -1,5 +1,5 @@
 # This configuration is for the 'staging' service.
-# It uses upgraded resources for large files and scales to zero for cost savings.
+# It uses upgraded resources for large files.
 service: staging
 runtime: custom
 env: flex
@@ -11,16 +11,13 @@ resources:
   disk_size_gb: 10
   
 automatic_scaling:
-  # Set min_num_instances to 0 for cost savings in the staging environment.
-  # This allows the service to scale down completely when not in use.
-  min_num_instances: 0
+  # The Flexible Environment requires at least 1 minimum instance.
+  min_num_instances: 1
   # Use the correct syntax for the Flexible Environment
   max_num_instances: 2
   cool_down_period_sec: 180
   cpu_utilization:
     target_utilization: 0.7
-```
 
-
-      
+    
 
