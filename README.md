@@ -6,7 +6,7 @@ This repository contains the journey and code for a Python-based audio mastering
 
 This is the flagship version of the project: a fully scalable, web-based audio mastering tool. Users can upload an audio file from any modern web browser, set mastering parameters, and receive a professionally mastered track, all powered by a robust backend on Google Cloud.
 
-The live application can be found here: [suspicious link removed]
+The live application can be found here: (https://audio-mastering-v2.ue.r.appspot.com/)
 
 ### Features
 
