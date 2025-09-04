@@ -1,7 +1,7 @@
-# audio_mastering_engine.py (True Disk-Based Architecture)
+# audio_mastering_engine.py (True Disk-Based Architecture - Final)
 # This is the definitive version. It uses disk-based chunking for processing
-# AND disk-based ffmpeg commands for final normalization to ensure minimal
-# memory usage, even for multi-hour audio files.
+# AND disk-based ffmpeg commands for loudness measurement and final normalization
+# to ensure minimal memory usage, even for multi-hour audio files.
 
 import os
 import tempfile
@@ -11,7 +11,6 @@ import json
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
-import pyln
 import traceback
 
 # GCP Libraries
@@ -19,49 +18,70 @@ from google.cloud import storage
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
 
-# --- New Disk-Based Normalization Logic ---
+# --- New, Pure FFmpeg Normalization Logic ---
 
-def measure_and_normalize_on_disk(input_path, output_path, target_lufs=-14.0):
+def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     """
-    Measures loudness and applies normalization using ffmpeg commands,
-    avoiding loading the full file into memory.
+    Measures and applies loudness normalization using a two-pass ffmpeg command,
+    which is extremely memory-efficient.
     """
-    print("BREADCRUMB: Starting disk-based loudness measurement...")
+    print(f"BREADCRUMB: Starting true disk-based loudness normalization for {input_path}...")
     try:
-        # Load audio with pydub to get samples for pyloudnorm, but do it carefully.
-        # This is the only step that still uses significant memory, but it's for measurement only.
-        audio = AudioSegment.from_file(input_path)
-        samples = np.array(audio.get_array_of_samples()).astype(np.float32)
+        # Pass 1: Measure the audio and get the required parameters from ffmpeg's output.
+        # The 'loudnorm' filter prints its analysis to stderr.
+        command_pass1 = [
+            'ffmpeg', '-i', input_path,
+            '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json',
+            '-f', 'null', '-'
+        ]
         
-        meter = pyln.Meter(audio.frame_rate)
-        loudness = meter.integrated_loudness(samples)
+        # We need to capture the stderr output to get the JSON data
+        result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True)
         
-        gain_db = target_lufs - loudness
-        print(f"BREADCRUMB: Measured loudness: {loudness:.2f} LUFS. Applying {gain_db:.2f} dB gain.")
+        # ffmpeg prints everything to stderr, so we parse it to find the JSON block
+        output_lines = result_pass1.stderr.splitlines()
+        json_str = ""
+        json_started = False
+        for line in output_lines:
+            if line.strip().startswith('{'):
+                json_started = True
+            if json_started:
+                json_str += line
+            if line.strip().endswith('}'):
+                break
         
-        # Use ffmpeg to apply the calculated gain. This is very memory-efficient.
-        # The 'loudnorm' filter is complex; a simple 'volume' filter is more reliable here.
-        subprocess.run(
-            ['ffmpeg', '-i', input_path, '-filter:a', f'volume={gain_db}dB', output_path],
-            check=True
-        )
-        print("BREADCRUMB: Disk-based normalization complete.")
+        if not json_str:
+            raise RuntimeError("Could not parse loudnorm stats from ffmpeg's first pass.")
+
+        measured_stats = json.loads(json_str)
+        print(f"BREADCRUMB: FFmpeg Pass 1 stats: {measured_stats}")
+
+        # Pass 2: Apply the measured parameters to normalize the audio.
+        command_pass2 = [
+            'ffmpeg', '-i', input_path,
+            '-af', f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:"
+                   f"measured_I={measured_stats['input_i']}:"
+                   f"measured_LRA={measured_stats['input_lra']}:"
+                   f"measured_TP={measured_stats['input_tp']}:"
+                   f"measured_thresh={measured_stats['input_thresh']}:"
+                   f"offset={measured_stats['target_offset']}",
+            output_path
+        ]
+        
+        subprocess.run(command_pass2, check=True)
+        print(f"BREADCRUMB: FFmpeg Pass 2 complete. Normalized file at {output_path}")
         return output_path
 
     except Exception as e:
         print(f"BREADCRUMB: CRITICAL ERROR during disk-based normalization: {e}")
         print("BREADCRUMB: Falling back to copying the un-normalized file.")
         traceback.print_exc()
-        # If normalization fails, copy the concatenated file to the output to not lose the work.
         subprocess.run(['cp', input_path, output_path], check=True)
         return output_path
 
-# --- The core processing logic, now calling the new normalization function ---
+# --- The core processing logic, now calling the new, correct normalization function ---
 
 def process_audio_in_chunks(settings):
-    """
-    The main audio processing function, redesigned for maximum memory efficiency.
-    """
     input_file = settings.get("input_file")
     output_file = settings.get("output_file")
 
@@ -82,24 +102,17 @@ def process_audio_in_chunks(settings):
             start_ms = i * chunk_size_ms
             end_ms = start_ms + chunk_size_ms
             chunk = audio_info[start_ms:end_ms]
-
             if chunk.channels == 1: chunk = chunk.set_channels(2)
             if chunk.sample_width != 2: chunk = chunk.set_sample_width(2)
-
             if settings.get("analog_character", 0) > 0:
                 chunk = apply_analog_character(chunk, settings.get("analog_character"))
-            
             chunk_samples = audio_segment_to_float_array(chunk)
             processed_samples = apply_eq_to_samples(chunk_samples, chunk.frame_rate, settings)
-            
             if settings.get("width", 1.0) != 1.0:
                 processed_samples = apply_stereo_width(processed_samples, settings.get("width"))
-                
             processed_chunk = float_array_to_audio_segment(processed_samples, chunk)
-            
             if settings.get("multiband"):
                 processed_chunk = apply_multiband_compressor(processed_chunk, settings)
-
             chunk_filename = os.path.join(temp_dir, f"chunk_{i:04d}.wav")
             processed_chunk.export(chunk_filename, format="wav")
             chunk_files.append(chunk_filename)
@@ -107,36 +120,29 @@ def process_audio_in_chunks(settings):
 
         print("BREADCRUMB: Concatenating all processed chunks using ffmpeg...")
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
-        
         file_list_path = os.path.join(temp_dir, "filelist.txt")
         with open(file_list_path, 'w') as f:
             for filename in chunk_files:
                 f.write(f"file '{os.path.basename(filename)}'\n")
-        
         subprocess.run(
             ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', 'filelist.txt', '-c', 'copy', 'concatenated.wav'],
-            check=True,
-            cwd=temp_dir
+            check=True, cwd=temp_dir
         )
         print("BREADCRUMB: Concatenation complete.")
 
         # <<< THIS IS THE KEY CHANGE >>>
-        # We now call our new, memory-efficient disk-based normalization function
-        # instead of loading the whole file into memory.
+        final_file_to_export = concatenated_file_path
         if settings.get("lufs") is not None:
             normalized_file_path = os.path.join(temp_dir, "normalized.wav")
-            measure_and_normalize_on_disk(concatenated_file_path, normalized_file_path, settings.get("lufs"))
-            final_file_to_export = normalized_file_path
-        else:
-            final_file_to_export = concatenated_file_path
+            final_file_to_export = normalize_loudness_on_disk_with_ffmpeg(
+                concatenated_file_path, normalized_file_path, settings.get("lufs")
+            )
         
-        # Simple soft limiter using ffmpeg as well for consistency
         print("BREADCRUMB: Applying final soft limit...")
         subprocess.run(
-            ['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', output_file],
+            ['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file],
             check=True
         )
-            
         print(f"BREADCRUMB: Finished DISK-BASED processing, exported to {output_file}")
 
 
@@ -313,10 +319,6 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
 
-def soft_limiter(samples, threshold=0.98):
-    peak = np.max(np.abs(samples))
-    if peak > threshold:
-        gain_reduction = threshold / peak
-        samples *= gain_reduction
-    return samples
+# The old numpy-based soft limiter is no longer needed, as we use ffmpeg's 'alimiter' now
+# def soft_limiter(samples, threshold=0.98): ...
 
