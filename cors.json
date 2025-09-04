@@ -1,0 +1,9 @@
+[
+  {
+    "origin": ["https://audio-mastering-v2.ue.r.appspot.com"],
+    "method": ["PUT", "GET", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Authorization", "X-Requested-With"],
+    "maxAgeSeconds": 3600
+  }
+]
+

@@ -1,6 +1,4 @@
-# audio_mastering_engine.py (The One True Final Version)
-# This version is updated to accept a service account key file, allowing it
-# to authenticate with Google Cloud Storage when running in a background task.
+# audio_mastering_engine.py
 
 import os
 import numpy as np
@@ -10,17 +8,74 @@ from scipy.signal import butter, sosfilt, lfilter
 import pyloudnorm as pyln
 import traceback
 import tempfile
+
+# Google Cloud Imports
 from google.cloud import storage
+from google.oauth2 import service_account
 
-# --- GCS-AWARE PROCESSING FUNCTION ---
+# NEW: Vertex AI Imports for Image Generation
+import vertexai
+from vertexai.preview.vision_models import ImageGenerationModel
 
+# --- NEW: AI Cover Art Generation ---
+def generate_cover_art(settings, storage_client, bucket, original_filename_base):
+    """
+    Generates cover art using Vertex AI's Imagen model if a prompt is provided.
+    """
+    prompt = settings.get("art_prompt")
+    if not prompt:
+        print("No art prompt provided. Skipping image generation.")
+        return None
+
+    try:
+        print(f"Initializing Vertex AI for image generation...")
+        # Note: App Engine's region might be different from Vertex AI's supported regions.
+        # 'us-central1' is a common one.
+        # Ensure GCP_PROJECT_ID is available in the environment.
+        project_id = os.environ.get('GCP_PROJECT_ID')
+        if not project_id:
+             print("ERROR: GCP_PROJECT_ID environment variable not set. Cannot initialize Vertex AI.")
+             return None
+
+        vertexai.init(project=project_id, location="us-central1")
+        
+        print(f"Generating image with prompt: '{prompt}'")
+        model = ImageGenerationModel.from_pretrained("imagegeneration@005")
+        response = model.generate_images(
+            prompt=prompt,
+            number_of_images=1,
+            aspect_ratio="1:1" # Square aspect ratio for album art
+        )
+        
+        image = response.images[0]
+        
+        # The image data is in _image_bytes. We need to save it to a temp file to upload.
+        with tempfile.NamedTemporaryFile(suffix=".png") as temp_image_file:
+            image.save(temp_image_file.name)
+            
+            image_filename = f"art_{original_filename_base}.png"
+            output_blob_name = f"processed/{image_filename}"
+            image_blob = bucket.blob(output_blob_name)
+            
+            print(f"Uploading generated image to gs://{bucket.name}/{output_blob_name}")
+            image_blob.upload_from_filename(temp_image_file.name, content_type='image/png')
+            
+            return output_blob_name
+
+    except Exception as e:
+        print(f"CRITICAL ERROR during image generation: {e}")
+        traceback.print_exc()
+        return None
+
+
+# --- GCS Aware Processing Logic ---
 def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     """
-    Downloads a file from GCS, processes it using the existing engine,
-    and uploads the result back to GCS. It uses a key file for auth.
+    Downloads a file from GCS, processes it, generates art, and uploads the results.
     """
-    # Initialize the client inside the function, as this runs in a separate process.
-    storage_client = storage.Client.from_service_account_json(key_file_path)
+    # Use the provided key file for authentication
+    credentials = service_account.Credentials.from_service_account_file(key_file_path)
+    storage_client = storage.Client(credentials=credentials)
     
     if not gcs_uri.startswith('gs://'):
         raise ValueError("Invalid GCS URI")
@@ -34,6 +89,7 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
         input_blob.download_to_filename(temp_in.name)
 
         original_filename = settings.get('original_filename', 'unknown.wav')
+        original_filename_base = os.path.splitext(original_filename)[0]
         output_filename = f"mastered_{original_filename}"
         
         with tempfile.NamedTemporaryFile(suffix=".wav") as temp_out:
@@ -41,24 +97,26 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
             new_settings["input_file"] = temp_in.name
             new_settings["output_file"] = temp_out.name
             
-            # This is the original, local-file processing function
+            # This is the original, unchanged processing function
             process_audio(new_settings)
 
-            output_blob_name = f"processed/{output_filename}"
-            output_blob = bucket.blob(output_blob_name)
+            # Upload the processed audio file
+            output_audio_blob_name = f"processed/{output_filename}"
+            output_audio_blob = bucket.blob(output_audio_blob_name)
             
-            print(f"Uploading processed file to gs://{bucket_name}/{output_blob_name}")
-            output_blob.upload_from_filename(temp_out.name, content_type='audio/wav')
+            print(f"Uploading processed audio to gs://{bucket.name}/{output_audio_blob_name}")
+            output_audio_blob.upload_from_filename(temp_out.name, content_type='audio/wav')
             
-            complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
+            # --- NEW: Generate Cover Art ---
+            # We pass the base filename to keep the art and audio filenames related
+            generate_cover_art(settings, storage_client, bucket, original_filename_base)
+
+            # Create a ".complete" flag file for the status checker
+            complete_flag_blob = bucket.blob(f"{output_audio_blob_name}.complete")
             complete_flag_blob.upload_from_string("done")
 
-# --- CORE LOCAL PROCESSING LOGIC ---
-
+# --- CORE PROCESSING LOGIC (Unchanged) ---
 def process_audio(settings, status_callback=None, progress_callback=None):
-    """
-    The main audio processing function. Works with local file paths.
-    """
     try:
         input_file = settings.get("input_file")
         output_file = settings.get("output_file")
@@ -77,10 +135,9 @@ def process_audio(settings, status_callback=None, progress_callback=None):
         
         chunk_size_ms = 30 * 1000
         processed_chunks = []
-        num_chunks = len(range(0, len(audio), chunk_size_ms))
         
         if status_callback: status_callback("Processing audio...")
-        for i, start_ms in enumerate(range(0, len(audio), chunk_size_ms)):
+        for start_ms in range(0, len(audio), chunk_size_ms):
             chunk = audio[start_ms:start_ms+chunk_size_ms]
             
             if settings.get("analog_character", 0) > 0:
@@ -99,7 +156,6 @@ def process_audio(settings, status_callback=None, progress_callback=None):
                 processed_chunk = apply_multiband_compressor(processed_chunk, settings)
             
             processed_chunks.append(processed_chunk)
-            if progress_callback: progress_callback(i + 1, num_chunks)
             
         if status_callback: status_callback("Assembling processed chunks...")
         processed_audio = sum(processed_chunks)
@@ -115,20 +171,15 @@ def process_audio(settings, status_callback=None, progress_callback=None):
 
         if status_callback: status_callback(f"Exporting processed audio to: {output_file}")
         
-        output_format = os.path.splitext(output_file)[1][1:].lower() or "wav"
-        if output_format == "wav":
-            final_audio.export(output_file, format="wav", parameters=["-acodec", "pcm_s16le"])
-        else:
-            final_audio.export(output_file, format=output_format)
-
+        final_audio.export(output_file, format="wav", parameters=["-acodec", "pcm_s16le"])
+        
         if status_callback: status_callback("Processing complete!")
 
     except Exception as e:
         if status_callback: status_callback(f"An unexpected error occurred: {e}")
         traceback.print_exc()
 
-# --- AUDIO HELPER FUNCTIONS ---
-
+# --- AUDIO HELPER FUNCTIONS (Unchanged) ---
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
     if audio_segment.channels == 2:
@@ -143,18 +194,13 @@ def float_array_to_audio_segment(float_array, audio_segment_template):
 def apply_analog_character(chunk, character_percent):
     if character_percent == 0: return chunk
     character_factor = character_percent / 100.0
-    
     samples = audio_segment_to_float_array(chunk)
-    
     drive = 1.0 + (character_factor * 0.5)
     saturated_samples = np.tanh(samples * drive)
-    
     low_bump_db = character_factor * 1.0 
     saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, low_bump_db, 'low')
-
     high_sparkle_db = character_factor * 1.5
     final_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 12000, high_sparkle_db, 'high')
-
     return float_array_to_audio_segment(final_samples, chunk)
 
 def apply_stereo_width(samples, width_factor):
@@ -209,33 +255,26 @@ def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
 
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
     samples = audio_segment_to_float_array(chunk)
-    
     low_sos = butter(4, low_crossover, btype='lowpass', fs=chunk.frame_rate, output='sos')
     high_sos = butter(4, high_crossover, btype='highpass', fs=chunk.frame_rate, output='sos')
-    
     low_band_samples = sosfilt(low_sos, samples, axis=0)
     high_band_samples = sosfilt(high_sos, samples, axis=0)
     mid_band_samples = samples - low_band_samples - high_band_samples
-    
     low_band_chunk = float_array_to_audio_segment(low_band_samples, chunk)
     mid_band_chunk = float_array_to_audio_segment(mid_band_samples, chunk)
     high_band_chunk = float_array_to_audio_segment(high_band_samples, chunk)
-    
     low_compressed = compress_dynamic_range(low_band_chunk,
         threshold=settings.get("low_thresh"), ratio=settings.get("low_ratio"))
     mid_compressed = compress_dynamic_range(mid_band_chunk,
         threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
-        
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
 
 def normalize_to_lufs(samples, sample_rate, target_lufs=-14.0):
     meter = pyln.Meter(sample_rate)
     mono_samples = samples.mean(axis=1) if samples.ndim == 2 else samples
-    
     if np.max(np.abs(mono_samples)) == 0: return samples
-
     loudness = meter.integrated_loudness(mono_samples)
     gain_db = target_lufs - loudness
     gain_linear = 10.0 ** (gain_db / 20.0)

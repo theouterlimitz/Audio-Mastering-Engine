@@ -16,20 +16,6 @@
             cursor: pointer;
             border-radius: 50%;
         }
-        /* Style for the error box to make tracebacks readable */
-        #status.error-trace {
-            white-space: pre-wrap; /* Allows line breaks */
-            text-align: left;
-            font-family: monospace;
-            font-size: 0.8rem;
-            line-height: 1.4;
-            padding: 1rem;
-            background-color: #1a1a1a;
-            border-radius: 8px;
-            border: 1px solid #4a4a4a;
-            max-height: 200px;
-            overflow-y: auto;
-        }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -52,130 +38,137 @@
                 </div>
             </div>
             
+            <!-- NEW: AI Cover Art Prompt -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <label for="art_prompt" class="block text-sm font-medium text-gray-300 mb-2">AI Cover Art Prompt (Optional)</label>
+                <textarea id="art_prompt" rows="2" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., A vibrant synthwave sunset over a retro cityscape"></textarea>
+            </div>
+
             <!-- Parameters -->
             <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
                  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                    <!-- Analog Character -->
-                    <div>
-                        <label for="analog_character" class="block text-sm font-medium text-gray-300">Analog Character (%)</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="0" max="100" value="0" step="1" id="analog_character" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="analog_characterValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0 %</span>
-                        </div>
-                    </div>
-                    <!-- Bass -->
-                    <div>
-                        <label for="bass_boost" class="block text-sm font-medium text-gray-300">Bass (dB)</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="-6" max="6" value="0" step="0.5" id="bass_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="bass_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
-                        </div>
-                    </div>
-                    <!-- Mid Cut -->
-                    <div>
-                        <label for="mid_cut" class="block text-sm font-medium text-gray-300">Mid Cut (dB)</label>
+                     <!-- Analog Character -->
+                     <div>
+                         <label for="analog_character" class="block text-sm font-medium text-gray-300">Analog Character (%)</label>
                          <div class="flex items-center space-x-3">
-                            <input type="range" min="0" max="6" value="0" step="0.5" id="mid_cut" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="mid_cutValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
-                        </div>
-                    </div>
-                     <!-- Presence -->
-                    <div>
-                        <label for="presence_boost" class="block text-sm font-medium text-gray-300">Presence (dB)</label>
+                             <input type="range" min="0" max="100" value="0" step="1" id="analog_character" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="analog_characterValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0 %</span>
+                         </div>
+                     </div>
+                     <!-- Bass -->
+                     <div>
+                         <label for="bass_boost" class="block text-sm font-medium text-gray-300">Bass (dB)</label>
                          <div class="flex items-center space-x-3">
-                            <input type="range" min="-6" max="6" value="0" step="0.5" id="presence_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="presence_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
-                        </div>
-                    </div>
-                     <!-- Treble -->
-                    <div>
-                        <label for="treble_boost" class="block text-sm font-medium text-gray-300">Treble (dB)</label>
-                         <div class="flex items-center space-x-3">
-                            <input type="range" min="-6" max="6" value="0" step="0.5" id="treble_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="treble_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
-                        </div>
-                    </div>
-                     <!-- Stereo Width -->
-                    <div>
-                        <label for="width" class="block text-sm font-medium text-gray-300">Stereo Width</label>
-                         <div class="flex items-center space-x-3">
-                            <input type="range" min="0" max="2" value="1" step="0.05" id="width" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="widthValue" class="text-sm font-mono text-indigo-300 w-12 text-right">1.00 x</span>
-                        </div>
-                    </div>
-                     <!-- Target LUFS -->
-                    <div class="md:col-span-2">
-                         <label for="lufs" class="block text-sm font-medium text-gray-300">Target LUFS</label>
-                         <div class="flex items-center space-x-3">
-                            <input type="range" min="-20" max="-6" value="-14" step="0.5" id="lufs" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="lufsValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-14.0 LUFS</span>
-                        </div>
-                    </div>
-                </div>
+                             <input type="range" min="-6" max="6" value="0" step="0.5" id="bass_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="bass_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                         </div>
+                     </div>
+                     <!-- Mid Cut -->
+                     <div>
+                         <label for="mid_cut" class="block text-sm font-medium text-gray-300">Mid Cut (dB)</label>
+                          <div class="flex items-center space-x-3">
+                             <input type="range" min="0" max="6" value="0" step="0.5" id="mid_cut" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="mid_cutValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                         </div>
+                     </div>
+                      <!-- Presence -->
+                     <div>
+                         <label for="presence_boost" class="block text-sm font-medium text-gray-300">Presence (dB)</label>
+                          <div class="flex items-center space-x-3">
+                             <input type="range" min="-6" max="6" value="0" step="0.5" id="presence_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="presence_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                         </div>
+                     </div>
+                       <!-- Treble -->
+                     <div>
+                         <label for="treble_boost" class="block text-sm font-medium text-gray-300">Treble (dB)</label>
+                          <div class="flex items-center space-x-3">
+                             <input type="range" min="-6" max="6" value="0" step="0.5" id="treble_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="treble_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                         </div>
+                     </div>
+                       <!-- Stereo Width -->
+                     <div>
+                         <label for="width" class="block text-sm font-medium text-gray-300">Stereo Width</label>
+                          <div class="flex items-center space-x-3">
+                             <input type="range" min="0" max="2" value="1" step="0.05" id="width" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="widthValue" class="text-sm font-mono text-indigo-300 w-12 text-right">1.00 x</span>
+                         </div>
+                     </div>
+                       <!-- Target LUFS -->
+                     <div class="md:col-span-2">
+                          <label for="lufs" class="block text-sm font-medium text-gray-300">Target LUFS</label>
+                          <div class="flex items-center space-x-3">
+                             <input type="range" min="-20" max="-6" value="-14" step="0.5" id="lufs" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="lufsValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-14.0 LUFS</span>
+                         </div>
+                     </div>
+                 </div>
             </div>
             
-            <!-- Multiband -->
-             <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                <div class="flex items-center">
-                    <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
-                    <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
-                </div>
-                <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                    <!-- Low Band -->
-                    <div>
-                        <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="low_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25.0 dB</span>
-                        </div>
-                    </div>
-                    <div>
-                        <label for="low_ratio" class="block text-sm font-medium text-gray-300">Low Ratio</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="low_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0 :1</span>
-                        </div>
-                    </div>
-                    <!-- Mid Band -->
-                    <div>
-                        <label for="mid_thresh" class="block text-sm font-medium text-gray-300">Mid Thresh (dB)</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="mid_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20.0 dB</span>
-                        </div>
-                    </div>
-                    <div>
-                        <label for="mid_ratio" class="block text-sm font-medium text-gray-300">Mid Ratio</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="mid_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0 :1</span>
-                        </div>
-                    </div>
-                    <!-- High Band -->
-                    <div>
-                        <label for="high_thresh" class="block text-sm font-medium text-gray-300">High Thresh (dB)</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="high_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15.0 dB</span>
-                        </div>
-                    </div>
-                    <div>
-                        <label for="high_ratio" class="block text-sm font-medium text-gray-300">High Ratio</label>
-                        <div class="flex items-center space-x-3">
-                            <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                            <span id="high_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0 :1</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
+             <!-- Multiband -->
+              <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                  <div class="flex items-center">
+                      <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
+                      <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
+                  </div>
+                  <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                      <!-- Low Band -->
+                      <div>
+                          <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="low_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25.0 dB</span>
+                          </div>
+                      </div>
+                      <div>
+                          <label for="low_ratio" class="block text-sm font-medium text-gray-300">Low Ratio</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="low_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0 :1</span>
+                          </div>
+                      </div>
+                      <!-- Mid Band -->
+                      <div>
+                          <label for="mid_thresh" class="block text-sm font-medium text-gray-300">Mid Thresh (dB)</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="mid_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20.0 dB</span>
+                          </div>
+                      </div>
+                      <div>
+                          <label for="mid_ratio" class="block text-sm font-medium text-gray-300">Mid Ratio</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="mid_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0 :1</span>
+                          </div>
+                      </div>
+                      <!-- High Band -->
+                      <div>
+                          <label for="high_thresh" class="block text-sm font-medium text-gray-300">High Thresh (dB)</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="high_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15.0 dB</span>
+                          </div>
+                      </div>
+                      <div>
+                          <label for="high_ratio" class="block text-sm font-medium text-gray-300">High Ratio</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="high_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0 :1</span>
+                          </div>
+                      </div>
+                  </div>
+             </div>
 
             <!-- Submit Button and Status -->
             <div>
+                <!-- NEW: Container for results -->
+                <div id="resultsContainer" class="mb-4"></div>
                 <button type="submit" id="submitButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 flex items-center justify-center">
                     Upload & Process
                 </button>
-                <div id="status" class="mt-4 text-center text-gray-400 h-auto min-h-6"></div>
-                <div id="downloadContainer" class="mt-4 text-center"></div>
+                <div id="status" class="mt-4 text-center text-gray-400 h-6"></div>
             </div>
         </form>
     </div>
@@ -185,10 +178,11 @@
         const fileInput = document.getElementById('fileInput');
         const fileNameDisplay = document.getElementById('fileName');
         const statusDisplay = document.getElementById('status');
-        const downloadContainer = document.getElementById('downloadContainer');
+        const resultsContainer = document.getElementById('resultsContainer');
         const submitButton = document.getElementById('submitButton');
         const useMultibandCheckbox = document.getElementById('useMultiband');
         const multibandControls = document.getElementById('multibandControls');
+        const artPromptInput = document.getElementById('art_prompt'); // NEW
         
         const API_BASE_URL = '';
 
@@ -231,7 +225,7 @@
             e.preventDefault();
             const file = fileInput.files[0];
             if (!file) {
-                showStatus({ error: 'Please select a file.' });
+                showStatus('Error: Please select a file.', true);
                 return;
             }
 
@@ -244,6 +238,7 @@
             });
             settings.multiband = useMultibandCheckbox.checked;
             settings.original_filename = file.name;
+            settings.art_prompt = artPromptInput.value.trim(); // NEW
 
             try {
                 showStatus('Requesting upload permission...');
@@ -254,9 +249,8 @@
                 });
 
                 if (!presignedResponse.ok) {
-                    // Try to get detailed error from the server response
-                    const errorData = await presignedResponse.json().catch(() => null);
-                    throw new Error(errorData ? JSON.stringify(errorData) : `Could not get upload URL from server (status: ${presignedResponse.status}).`);
+                    const errorData = await presignedResponse.json();
+                    throw new Error(`Could not get upload URL from server (status: ${presignedResponse.status}). ${errorData.error || ''}`);
                 }
                 const { url, gcs_uri } = await presignedResponse.json();
 
@@ -275,20 +269,17 @@
                     body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
                 });
                 
-                if (!startResponse.ok) throw new Error('Could not start processing job.');
+                if (!startResponse.ok) {
+                    const errorData = await startResponse.json();
+                    throw new Error(`Could not start processing job. ${errorData.error || ''}`);
+                }
                 const { processed_filename } = await startResponse.json();
                 
                 pollForStatus(processed_filename);
 
             } catch (error) {
                 console.error('Upload process failed:', error);
-                // The error object might contain the JSON response now
-                try {
-                    const parsedError = JSON.parse(error.message);
-                    showStatus(parsedError, true);
-                } catch (e) {
-                     showStatus({ error: error.message }, true);
-                }
+                showStatus(`Error: ${error.message}`, true);
                 setProcessingState(false);
             }
         });
@@ -300,78 +291,75 @@
                     const response = await fetch(`${API_BASE_URL}/status?filename=${encodeURIComponent(filename)}`);
                     const data = await response.json();
 
-                    if (data.status === 'done' && data.download_url) {
+                    if (data.status === 'done') {
                         clearInterval(interval);
                         showStatus('Processing complete!', false);
                         setProcessingState(false);
-                        showDownloadButton(data.download_url);
+                        showResults(data); // NEW: Call new function
                     } else if (data.status === 'error') {
                         clearInterval(interval);
-                        showStatus(data, true);
+                        showStatus(`Error: ${data.message}`, true);
                          setProcessingState(false);
                     }
                 } catch (error) {
                     clearInterval(interval);
-                    showStatus({ error: 'Could not check status.' }, true);
+                    showStatus('Error: Could not check status.', true);
                      setProcessingState(false);
                 }
             }, 10000); 
         }
 
-        // --- THIS IS THE UPDATED FUNCTION ---
-        function showStatus(messageData, isError = false) {
-             // Reset styles
-            statusDisplay.classList.remove('error-trace');
+        function showStatus(message, isError = false) {
+            statusDisplay.textContent = message;
             statusDisplay.style.color = isError ? '#F87171' : '#8B949E';
-
-            if (typeof messageData === 'string') {
-                statusDisplay.textContent = messageData;
-            } else if (typeof messageData === 'object' && messageData !== null) {
-                if (messageData.full_trace) {
-                    // If we have a full traceback, display it in a special formatted box
-                    statusDisplay.textContent = messageData.full_trace;
-                    statusDisplay.classList.add('error-trace');
-                } else if (messageData.error) {
-                    // Display a simple error message
-                    statusDisplay.textContent = `Error: ${messageData.error}`;
-                } else if (messageData.message) {
-                    statusDisplay.textContent = messageData.message;
-                }
-            }
         }
 
         function setProcessingState(isProcessing, message = "Upload & Process") {
             submitButton.disabled = isProcessing;
-            const elementsToDisable = document.querySelectorAll('input, button');
+            const elementsToDisable = document.querySelectorAll('input, button, textarea');
             elementsToDisable.forEach(el => {
                 if(el.id !== 'submitButton') el.disabled = isProcessing;
             });
 
             if (isProcessing) {
-                submitButton.innerHTML = `
-                    <svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    ${message}`;
+                submitButton.textContent = message;
                 submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
                 submitButton.classList.add('bg-gray-600', 'cursor-not-allowed');
-                downloadContainer.innerHTML = '';
+                resultsContainer.innerHTML = '';
             } else {
-                submitButton.innerHTML = "Upload & Process";
+                submitButton.textContent = "Upload & Process";
                 submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
                 submitButton.classList.remove('bg-gray-600', 'cursor-not-allowed');
             }
         }
         
-        function showDownloadButton(url) {
-            downloadContainer.innerHTML = `
-                <a href="${url}"
-                   target="_blank"
-                   rel="noopener noreferrer"
-                   class="w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300">
-                    Download Mastered File
-                </a>`;
+        // NEW: Function to show final results
+        function showResults(data) {
+            resultsContainer.innerHTML = ''; // Clear previous results
+
+            let content = '<div class="space-y-4">';
+            // Show the image if we have a URL for it
+            if (data.image_url) {
+                content += `
+                    <div>
+                        <h3 class="text-lg font-semibold text-white mb-2 text-center">Generated Cover Art</h3>
+                        <img src="${data.image_url}" alt="AI Generated Cover Art" class="rounded-lg shadow-lg mx-auto max-w-sm w-full">
+                    </div>
+                `;
+            }
+            // Always show the download button if we have a URL for it
+            if (data.download_url) {
+                content += `
+                    <a href="${data.download_url}"
+                       target="_blank"
+                       rel="noopener noreferrer"
+                       class="w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 text-center">
+                        Download Mastered File
+                    </a>
+                `;
+            }
+            content += '</div>';
+            resultsContainer.innerHTML = content;
         }
     </script>
 </body>
