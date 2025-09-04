@@ -1,10 +1,4 @@
-service: staging  # <-- THIS IS THE ONLY CHANGE WE ARE MAKING.
-                  # This tells App Engine to deploy to a new service named 'staging'
-                  # instead of overwriting the 'default' (production) service.
-
-# app.yaml (Final Correct Version for New Project)
-# This deploys the application to the 'default' service using the
-# App Engine Flexible Environment with a custom runtime.
+service: staging  # This tells App Engine to deploy to our staging service.
 
 runtime: custom
 env: flex
@@ -18,7 +12,10 @@ resources:
 automatic_scaling:
   # The minimum number of instances for env:flex must be 1 or greater.
   min_num_instances: 1
-  max_instances: 2
+
+  # THIS IS THE FIX: The correct syntax for Flex Environment is 'max_num_instances'
+  max_num_instances: 2
+
   cool_down_period_sec: 180
   cpu_utilization:
     target_utilization: 0.7
