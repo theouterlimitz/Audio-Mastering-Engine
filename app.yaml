@@ -1,19 +1,26 @@
+# This configuration is for the 'staging' service.
+# It uses upgraded resources for large files and scales to zero for cost savings.
 service: staging
 runtime: custom
 env: flex
 
-# Resource allocation for the flexible environment instances.
-# UPGRADED: Doubled the CPU and Memory to handle large audio files.
+# Upgraded resources to handle large audio files (2 CPU, 4GB RAM)
 resources:
   cpu: 2
   memory_gb: 4
   disk_size_gb: 10
   
 automatic_scaling:
-  # The syntax is max_num_instances for Flex
-  min_num_instances: 1
+  # Set min_num_instances to 0 for cost savings in the staging environment.
+  # This allows the service to scale down completely when not in use.
+  min_num_instances: 0
+  # Use the correct syntax for the Flexible Environment
   max_num_instances: 2
   cool_down_period_sec: 180
   cpu_utilization:
     target_utilization: 0.7
+```
+
+
+      
 
