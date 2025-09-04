@@ -1,21 +1,18 @@
-service: staging  # This tells App Engine to deploy to our staging service.
-
+service: staging
 runtime: custom
 env: flex
 
 # Resource allocation for the flexible environment instances.
+# UPGRADED: Doubled the CPU and Memory to handle large audio files.
 resources:
-  cpu: 1
-  memory_gb: 2
+  cpu: 2
+  memory_gb: 4
   disk_size_gb: 10
-
+  
 automatic_scaling:
-  # The minimum number of instances for env:flex must be 1 or greater.
+  # The syntax is max_num_instances for Flex
   min_num_instances: 1
-
-  # THIS IS THE FIX: The correct syntax for Flex Environment is 'max_num_instances'
   max_num_instances: 2
-
   cool_down_period_sec: 180
   cpu_utilization:
     target_utilization: 0.7
