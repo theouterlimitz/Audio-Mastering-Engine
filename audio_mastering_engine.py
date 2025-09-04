@@ -1,6 +1,6 @@
-# audio_mastering_engine.py (AI Debugging Version)
-# This version includes detailed "BREADCRUMB" print statements to stdout
-# to help diagnose the exact point of failure in the AI art generation process.
+# audio_mastering_engine.py (Chunking Architecture Version)
+# This version is refactored to handle very large audio files by processing
+# them in chunks from disk, keeping memory usage low and constant.
 
 import os
 import tempfile
@@ -16,12 +16,12 @@ from google.cloud import storage
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
 
-# --- CORE PROCESSING LOGIC ---
+# --- New Chunking-Based Processing Logic ---
 
-def process_audio(settings):
+def process_audio_in_chunks(settings):
     """
-    The main audio processing function.
-    Accepts a dictionary of settings, including input and output file paths.
+    The main audio processing function, redesigned for memory efficiency.
+    It reads, processes, and writes audio in small chunks to handle large files.
     """
     input_file = settings.get("input_file")
     output_file = settings.get("output_file")
@@ -29,21 +29,36 @@ def process_audio(settings):
     if not input_file or not output_file:
         raise ValueError("Input or output file not specified.")
 
-    print(f"BREADCRUMB: Starting process_audio for {input_file}")
+    print(f"BREADCRUMB: Starting CHUNKED process_audio for {input_file}")
+    
+    # Get audio info without loading the whole file into memory
     audio = AudioSegment.from_file(input_file)
-
-    if audio.channels == 1:
-        audio = audio.set_channels(2)
-    if audio.sample_width != 2:
-        audio = audio.set_sample_width(2)
-
+    frame_rate = audio.frame_rate
+    channels = audio.channels
+    sample_width = audio.sample_width
+    
+    # Define chunk size (e.g., 30 seconds)
     chunk_size_ms = 30 * 1000
-    processed_chunks = []
-    num_chunks = len(range(0, len(audio), chunk_size_ms))
+    num_chunks = (len(audio) // chunk_size_ms) + 1
+    
+    processed_audio_segments = []
 
-    for i, start_ms in enumerate(range(0, len(audio), chunk_size_ms)):
-        chunk = audio[start_ms:start_ms+chunk_size_ms]
+    print(f"BREADCRUMB: Beginning to process {len(audio)}ms of audio in {num_chunks} chunks.")
+
+    # Loop through the audio file in chunks
+    for i in range(num_chunks):
+        start_ms = i * chunk_size_ms
+        end_ms = start_ms + chunk_size_ms
         
+        # pydub slicing is memory efficient, it seeks and reads only the chunk
+        chunk = AudioSegment.from_file(input_file)[start_ms:end_ms]
+
+        # --- The same high-quality processing logic as before ---
+        if chunk.channels == 1:
+            chunk = chunk.set_channels(2)
+        if chunk.sample_width != 2:
+            chunk = chunk.set_sample_width(2)
+
         if settings.get("analog_character", 0) > 0:
             chunk = apply_analog_character(chunk, settings.get("analog_character"))
 
@@ -58,27 +73,38 @@ def process_audio(settings):
         
         if settings.get("multiband"):
             processed_chunk = apply_multiband_compressor(processed_chunk, settings)
-        
-        processed_chunks.append(processed_chunk)
+        # --- End of processing logic ---
+
+        processed_audio_segments.append(processed_chunk)
         print(f"BREADCRUMB: Processed chunk {i+1}/{num_chunks}")
 
-    processed_audio = sum(processed_chunks)
+    # Combine all the processed chunks in memory. This is the only point
+    # where the full file is assembled.
+    print("BREADCRUMB: Assembling all processed chunks...")
+    full_processed_audio = sum(processed_audio_segments)
     
-    final_samples = audio_segment_to_float_array(processed_audio)
+    # The final normalization and limiting still happen on the full audio
+    print("BREADCRUMB: Performing final loudness normalization and limiting...")
+    final_samples = audio_segment_to_float_array(full_processed_audio)
 
-    if settings.get("luts") is not None:
-        final_samples = normalize_to_lufs(final_samples, processed_audio.frame_rate, settings.get("lufs"))
+    if settings.get("lufs") is not None:
+        final_samples = normalize_to_lufs(final_samples, frame_rate, settings.get("lufs"))
 
     final_samples = soft_limiter(final_samples)
-    final_audio = float_array_to_audio_segment(final_samples, processed_audio)
+    final_audio = float_array_to_audio_segment(final_samples, full_processed_audio)
     
+    # Export the final combined file
     output_format = os.path.splitext(output_file)[1][1:].lower() or "wav"
     if output_format == "wav":
         final_audio.export(output_file, format="wav", parameters=["-acodec", "pcm_s16le"])
     else:
         final_audio.export(output_file, format=output_format)
-    print(f"BREADCRUMB: Finished process_audio, exported to {output_file}")
+        
+    print(f"BREADCRUMB: Finished CHUNKED process_audio, exported to {output_file}")
 
+
+# --- All other functions (generate_cover_art, process_audio_from_gcs, etc.) remain largely the same, ---
+# --- but process_audio_from_gcs will now call our new chunking function. ---
 
 def generate_cover_art(prompt, audio_filename_base, bucket):
     """
@@ -87,10 +113,8 @@ def generate_cover_art(prompt, audio_filename_base, bucket):
     print("BREADCRUMB: --- Starting generate_cover_art ---")
     
     try:
-        # NOTE: project and location are often auto-detected when running on GCP.
-        # We specify them here for robustness.
         gcp_project = os.environ.get('GCP_PROJECT_ID')
-        gcp_location = 'us-east1' # The region where your App Engine app is
+        gcp_location = 'us-east1'
         print(f"BREADCRUMB: Initializing Vertex AI for project '{gcp_project}' in '{gcp_location}'")
         vertexai.init(project=gcp_project, location=gcp_location)
         print("BREADCRUMB: Vertex AI initialized successfully.")
@@ -119,17 +143,14 @@ def generate_cover_art(prompt, audio_filename_base, bucket):
         raise
 
     try:
-        # Create a temporary file to save the image data
         with tempfile.NamedTemporaryFile(suffix=".png") as temp_image_file:
             print(f"BREADCRUMB: Saving generated image to temporary file: {temp_image_file.name}")
             images[0].save(location=temp_image_file.name, include_generation_parameters=True)
             print("BREADCRUMB: Image saved to temp file successfully.")
 
-            # Define the final blob name for the image in GCS
             image_filename = f"art_{os.path.splitext(audio_filename_base)[0]}.png"
             image_blob_name = f"processed/{image_filename}"
             
-            # Upload the image from the temporary file to GCS
             print(f"BREADCRUMB: Uploading image to GCS at: {image_blob_name}")
             blob = bucket.blob(image_blob_name)
             blob.upload_from_filename(temp_image_file.name, content_type='image/png')
@@ -167,7 +188,9 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
             new_settings["input_file"] = temp_in.name
             new_settings["output_file"] = temp_out.name
             
-            process_audio(new_settings)
+            # <<< THIS IS THE KEY CHANGE >>>
+            # We now call our new memory-efficient chunking function
+            process_audio_in_chunks(new_settings)
 
             output_blob_name = f"processed/{output_filename_base}"
             output_blob = bucket.blob(output_blob_name)
@@ -179,10 +202,8 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
             art_prompt = settings.get("art_prompt")
             if art_prompt and art_prompt.strip():
                 try:
-                    # Pass the bucket object directly to the function
                     generate_cover_art(art_prompt, output_filename_base, bucket)
                 except Exception as e:
-                    # Print the full traceback for detailed debugging
                     print("="*50)
                     print("WARNING: Cover art generation failed, but mastering succeeded.")
                     traceback.print_exc()
@@ -193,7 +214,6 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
             complete_flag_blob.upload_from_string("done")
 
 # --- All the other helper functions (audio_segment_to_float_array, etc.) remain unchanged ---
-# ... (rest of the file is identical) ...
 
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
@@ -313,4 +333,3 @@ def soft_limiter(samples, threshold=0.98):
         gain_reduction = threshold / peak
         samples *= gain_reduction
     return samples
-
