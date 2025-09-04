@@ -1,6 +1,6 @@
-# main.py (Final Debugging Version)
-# This version adds a new '/test-task' endpoint for direct debugging of the
-# Cloud Tasks integration. It also includes enhanced logging.
+# main.py (Production Version)
+# This is the final, clean version of the server code.
+# The '/test-task' debugging endpoint has been removed.
 
 import os
 import json
@@ -21,6 +21,7 @@ KEY_FILE_PATH = 'sa-key.json'
 TASK_QUEUE = 'mastering-queue'
 TASK_LOCATION = 'us-east1' 
 
+# Initialize clients using the dedicated service account key
 try:
     credentials, GCP_PROJECT_ID = google.auth.load_credentials_from_file(KEY_FILE_PATH)
     storage_client = storage.Client(credentials=credentials)
@@ -36,11 +37,13 @@ except Exception as e:
 # --- Frontend Route ---
 @app.route('/')
 def index():
+    """Serves the main frontend page."""
     return render_template('index.html')
 
 # --- API Endpoints ---
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
+    """Generates a secure URL for the client to upload a file directly to GCS."""
     if not storage_client:
         return jsonify({"error": "Backend server is misconfigured: Missing service account key."}), 500
     try:
@@ -68,19 +71,15 @@ def generate_upload_url():
 
 @app.route('/start-processing', methods=['POST'])
 def start_processing():
-    print("Entered /start-processing endpoint.")
+    """Receives confirmation of an upload and creates a background processing task."""
     if not tasks_client:
-        print("Error: tasks_client is not initialized.")
         return jsonify({"error": "Backend server is misconfigured: Missing service account key."}), 500
     try:
         data = request.get_json()
         if not data or 'gcs_uri' not in data or 'settings' not in data:
-            print(f"Error: Invalid data received: {data}")
             return jsonify({"error": "Missing GCS URI or settings"}), 400
         
-        print(f"Attempting to create task for project '{GCP_PROJECT_ID}' in location '{TASK_LOCATION}' for queue '{TASK_QUEUE}'.")
         queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
-        print(f"Successfully constructed queue path: {queue_path}")
 
         # Add the key file path to the task payload so the worker can use it
         task_payload = data.copy()
@@ -94,7 +93,7 @@ def start_processing():
                 "body": json.dumps(task_payload).encode(),
             }
         }
-        print("Task object created. Sending to Cloud Tasks API...")
+        
         created_task = tasks_client.create_task(parent=queue_path, task=task)
         print(f"Successfully created task: {created_task.name}")
         
@@ -106,35 +105,9 @@ def start_processing():
         print(f"CRITICAL ERROR in start_processing: {error_details}")
         return jsonify({"error": f"Backend Error: {error_details}"}), 500
 
-# --- NEW DEBUGGING ENDPOINT ---
-@app.route('/test-task')
-def test_task():
-    """A simple endpoint to test Cloud Tasks functionality in isolation."""
-    print("Entered /test-task endpoint for direct debugging.")
-    if not tasks_client:
-        return "Error: tasks_client is not initialized.", 500
-    try:
-        queue_path = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)
-        dummy_payload = {"message": "hello world", "timestamp": str(datetime.datetime.now())}
-        task = {
-            "app_engine_http_request": {
-                "http_method": tasks_v2.HttpMethod.POST,
-                "relative_uri": "/process-task", # Still points to the real worker
-                "headers": {"Content-type": "application/json"},
-                "body": json.dumps(dummy_payload).encode(),
-            }
-        }
-        created_task = tasks_client.create_task(parent=queue_path, task=task)
-        print(f"Successfully created DUMMY task: {created_task.name}")
-        return f"<h1>Success!</h1><p>Successfully created dummy task: {created_task.name}</p>", 200
-    except Exception as e:
-        error_details = traceback.format_exc()
-        print(f"CRITICAL ERROR in /test-task: {error_details}")
-        return f"<h1>Failure</h1><p>Could not create task. Check the logs. Error: {e}</p>", 500
-
 @app.route('/status', methods=['GET'])
 def get_status():
-    # ... (rest of the code is unchanged)
+    """Checks if a processed file exists and provides a download link."""
     if not storage_client:
         return jsonify({"error": "Backend server is misconfigured: Missing service account key."}), 500
     try:
@@ -165,33 +138,29 @@ def get_status():
 
 @app.route('/process-task', methods=['POST'])
 def process_task():
+    """This endpoint is called by Cloud Tasks to run the background job."""
     from audio_mastering_engine import process_audio_from_gcs
     
     job_data = json.loads(request.data.decode('utf-8'))
     
-    # Check if it's a real job or a dummy job
-    if "gcs_uri" in job_data and "settings" in job_data:
-        gcs_uri = job_data.get('gcs_uri')
-        settings = job_data.get('settings')
-        key_file = job_data.get('key_file_path')
+    gcs_uri = job_data.get('gcs_uri')
+    settings = job_data.get('settings')
+    key_file = job_data.get('key_file_path')
 
-        if not gcs_uri or not settings or not key_file:
-            print(f"ERROR: Invalid real task data received: {job_data}")
-            return "Bad Request: Invalid real task data", 400
+    if not gcs_uri or not settings or not key_file:
+        print(f"ERROR: Invalid real task data received: {job_data}")
+        return "Bad Request: Invalid real task data", 400
 
-        try:
-            print(f"Starting background processing for {gcs_uri}")
-            process_audio_from_gcs(gcs_uri, settings, key_file)
-            print(f"Successfully completed processing for {gcs_uri}")
-            return "OK", 200
-        except Exception as e:
-            print(f"CRITICAL ERROR processing {gcs_uri}: {traceback.format_exc()}")
-            return "Internal Server Error", 500
-    else:
-        # It's just a dummy task, log it and return success
-        print(f"Received and processed dummy task: {job_data}")
+    try:
+        print(f"Starting background processing for {gcs_uri}")
+        process_audio_from_gcs(gcs_uri, settings, key_file)
+        print(f"Successfully completed processing for {gcs_uri}")
         return "OK", 200
+    except Exception as e:
+        print(f"CRITICAL ERROR processing {gcs_uri}: {traceback.format_exc()}")
+        return "Internal Server Error", 500
 
 if __name__ == '__main__':
+    # This is used for local testing. On App Engine, Gunicorn runs the 'app' object.
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
