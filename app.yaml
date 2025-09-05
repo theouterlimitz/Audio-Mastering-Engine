@@ -1,18 +1,16 @@
 # This configuration is for the 'staging' service.
-# It uses a heavy-duty B8 backend instance to definitively
-# solve any and all memory issues for large file processing.
+# It uses a heavy-duty B8 backend instance with manual scaling to
+# definitively solve any and all memory issues for large file processing.
 service: staging
 runtime: custom
 env: flex
 
-# Upgraded to a heavy-duty B8 backend instance class
+# Specifies the powerful, memory-heavy backend instance class
 instance_class: B8
 
-automatic_scaling:
-  # The Flexible Environment requires at least 1 minimum instance.
-  min_num_instances: 1
-  # We will only scale to one of these powerful instances for now.
-  max_num_instances: 1
-  cool_down_period_sec: 180
-  cpu_utilization:
-    target_utilization: 0.7
+# Manual scaling is REQUIRED for larger instance classes like B8.
+# This keeps one powerful instance running for our worker tasks.
+manual_scaling:
+  instances: 1
+
+
