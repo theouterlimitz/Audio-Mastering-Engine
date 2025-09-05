@@ -333,5 +333,3 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
 
-    
-
