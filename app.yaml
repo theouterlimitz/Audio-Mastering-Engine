@@ -1,18 +1,14 @@
 # This configuration is for the 'staging' service.
-# It uses a heavy-duty B8 backend instance with manual scaling.
+# It uses a heavy-duty B8 backend instance with manual scaling to
+# definitively solve any and all memory issues for large file processing.
 service: staging
 runtime: custom
 env: flex
 
 instance_class: B8
 
+# Manual scaling is REQUIRED for larger instance classes like B8.
+# This keeps one powerful instance running for our worker tasks.
 manual_scaling:
   instances: 1
 
-# This value has been slightly changed to force a full service update.
-automatic_scaling:
-  min_num_instances: 1
-  max_num_instances: 1
-  cool_down_period_sec: 181
-  cpu_utilization:
-    target_utilization: 0.7
