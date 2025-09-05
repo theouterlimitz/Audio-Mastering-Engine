@@ -182,20 +182,13 @@
                 </button>
                 <div id="status" class="mt-4 text-center text-gray-400 h-auto min-h-[1.5rem]"></div>
                 
-                <!-- NEW Progress Bar -->
-                <div id="progressContainer" class="hidden mt-4">
-                    <div id="progressText" class="text-center text-sm text-indigo-300 mb-1"></div>
-                    <div class="progress-bar">
-                        <div id="progressBarInner" class="progress-bar-inner">0%</div>
-                    </div>
-                </div>
-
                 <div id="resultsContainer" class="mt-4 text-center space-y-4"></div>
             </div>
         </form>
     </div>
 
     <script>
+        // --- All of the element getters and slider setup is the same ---
         const form = document.getElementById('uploadForm');
         const fileInput = document.getElementById('fileInput');
         const fileNameDisplay = document.getElementById('fileName');
@@ -204,14 +197,9 @@
         const useMultibandCheckbox = document.getElementById('useMultiband');
         const multibandControls = document.getElementById('multibandControls');
         const resultsContainer = document.getElementById('resultsContainer');
-        const artPromptInput = document.getElementById('artPrompt'); // <-- Get the art prompt element
+        const artPromptInput = document.getElementById('artPrompt');
         
-        // Progress Bar Elements
-        const progressContainer = document.getElementById('progressContainer');
-        const progressText = document.getElementById('progressText');
-        const progressBarInner = document.getElementById('progressBarInner');
-        
-        const API_BASE_URL = ''; // Relative to current host
+        const API_BASE_URL = '';
 
         const sliders = [
             { id: 'analog_character', display: 'analog_characterValue', unit: ' %', fixed: 0 },
@@ -256,7 +244,7 @@
                 return;
             }
 
-            setProcessingState(true, 'Getting ready...');
+            setProcessingState(true);
 
             const settings = {};
             sliders.forEach(slider => {
@@ -266,15 +254,11 @@
             settings.multiband = useMultibandCheckbox.checked;
             settings.original_filename = file.name;
             
-            // --- THIS IS THE BULLETPROOF FIX ---
-            // Explicitly get the value and add it to settings if it's not empty.
             const artPromptValue = artPromptInput.value.trim();
             if (artPromptValue) {
                 settings.art_prompt = artPromptValue;
             }
-            // --- END OF FIX ---
-
-            // Log the settings object to the console for definitive proof
+            
             console.log("Submitting settings:", settings);
 
             try {
@@ -284,10 +268,9 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename: file.name, contentType: file.type })
                 });
-
                 if (!presignedResponse.ok) {
-                    const errorData = await presignedResponse.json();
-                    throw new Error(errorData.error || `Could not get upload URL (status: ${presignedResponse.status}).`);
+                    const errorText = await presignedResponse.text();
+                    throw new Error(`Could not get upload URL (status: ${presignedResponse.status}). Server says: ${errorText}`);
                 }
                 const { url, gcs_uri } = await presignedResponse.json();
 
@@ -305,14 +288,17 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
                 });
-                
                 if (!startResponse.ok) {
-                     const errorData = await startResponse.json();
-                     throw new Error(errorData.error || 'Could not start processing job.');
+                     const errorText = await startResponse.text();
+                     throw new Error(`Could not start processing job. Server says: ${errorText}`);
                 }
+                // --- THIS IS THE KEY CHANGE ---
+                // The backend now sends back both expected filenames. We need to capture both.
                 const { processed_filename, image_filename } = await startResponse.json();
                 
-                pollForStatus(processed_filename, image_filename);
+                // Now we pass both filenames to the polling function.
+                pollForStatus(processed_filename, image_filename || null);
+                // --- END OF CHANGE ---
 
             } catch (error) {
                 console.error('Upload process failed:', error);
@@ -323,21 +309,27 @@
 
         function pollForStatus(audioFilename, imageFilename) {
             showStatus({ message: 'Processing in the cloud... (this may take several minutes)' });
-            progressContainer.classList.remove('hidden');
 
             const interval = setInterval(async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/status?audio_filename=${encodeURIComponent(audioFilename)}&image_filename=${encodeURIComponent(imageFilename)}`);
-                    if (!response.ok) { // Handle non-200 responses
-                        throw new Error(`Status check failed with status: ${response.status}`);
+                    // --- THIS IS THE SECOND KEY CHANGE ---
+                    // We build a query string that includes both filenames.
+                    // This ensures the backend knows exactly what to check for.
+                    const queryParams = new URLSearchParams({
+                        audio_filename: audioFilename,
+                        // Handle the case where image_filename might be null or empty
+                        image_filename: imageFilename || '' 
+                    });
+                    const response = await fetch(`${API_BASE_URL}/status?${queryParams.toString()}`);
+                    // --- END OF CHANGE ---
+
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Status check failed with status: ${response.status}. Server says: ${errorText}`);
                     }
                     const data = await response.json();
 
-                    if (data.status === 'processing' && data.progress_status) {
-                        progressText.textContent = data.progress_status.status;
-                        progressBarInner.style.width = `${data.progress_status.progress}%`;
-                        progressBarInner.textContent = `${data.progress_status.progress}%`;
-                    } else if (data.status === 'done') {
+                    if (data.status === 'done') {
                         clearInterval(interval);
                         showStatus({ message: 'Processing complete!' });
                         setProcessingState(false);
@@ -345,14 +337,14 @@
                     } else if (data.status === 'error') {
                         clearInterval(interval);
                         showStatus({ isError: true, message: `Error: ${data.message}` });
-                         setProcessingState(false);
+                        setProcessingState(false);
                     }
                 } catch (error) {
                     clearInterval(interval);
                     showStatus({ isError: true, message: 'Error: Could not check status.' });
                     setProcessingState(false);
                 }
-            }, 5000); 
+            }, 10000); 
         }
 
         function showStatus({ isError = false, message = '' }) {
@@ -376,12 +368,11 @@
                 submitButton.textContent = "Upload & Process";
                 submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
                 submitButton.classList.remove('bg-gray-600', 'cursor-not-allowed');
-                progressContainer.classList.add('hidden');
             }
         }
         
         function showResults(data) {
-            resultsContainer.innerHTML = ''; // Clear previous results
+            resultsContainer.innerHTML = ''; 
 
             if (data.art_url) {
                 const img = document.createElement('img');
@@ -401,7 +392,6 @@
                 resultsContainer.appendChild(link);
             }
         }
-
     </script>
 </body>
 </html>

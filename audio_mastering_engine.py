@@ -1,7 +1,7 @@
-# audio_mastering_engine.py (True Disk-Based Architecture - Final)
-# This is the definitive version. It uses disk-based chunking for processing
-# AND disk-based ffmpeg commands for loudness measurement and final normalization
-# to ensure minimal memory usage, even for multi-hour audio files.
+# audio_mastering_engine.py (Final Diagnostic Version)
+# This version replaces all print() statements with Python's standard logging
+# library. This provides better context and ensures that any and all exceptions,
+# especially silent ones, are written to the stderr log for definitive debugging.
 
 import os
 import tempfile
@@ -21,6 +21,7 @@ import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
 
 # --- Set up professional logging ---
+# This will ensure logs are formatted clearly and sent to the correct stream
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
@@ -29,39 +30,28 @@ logging.basicConfig(
 def log_memory_usage():
     process = psutil.Process(os.getpid())
     mem_info = process.memory_info()
+    # RSS is the Resident Set Size, the non-swapped physical memory a process has used.
     logging.info(f"MEMORY USAGE: {mem_info.rss / 1024 ** 2:.2f} MB")
 
-# --- New, Pure FFmpeg Normalization Logic ---
+# --- The core processing logic, now with robust logging ---
 
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
-    """
-    Measures and applies loudness normalization using a two-pass ffmpeg command,
-    which is extremely memory-efficient.
-    """
     logging.info(f"Starting true disk-based loudness normalization for {input_path}...")
     try:
-        # Pass 1: Measure the audio and get the required parameters from ffmpeg's output.
-        # The 'loudnorm' filter prints its analysis to stderr.
         command_pass1 = [
             'ffmpeg', '-i', input_path,
             '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json',
             '-f', 'null', '-'
         ]
-        
-        # We need to capture the stderr output to get the JSON data
         result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True)
         
-        # ffmpeg prints everything to stderr, so we parse it to find the JSON block
         output_lines = result_pass1.stderr.splitlines()
         json_str = ""
         json_started = False
         for line in output_lines:
-            if line.strip().startswith('{'):
-                json_started = True
-            if json_started:
-                json_str += line
-            if line.strip().endswith('}'):
-                break
+            if line.strip().startswith('{'): json_started = True
+            if json_started: json_str += line
+            if line.strip().endswith('}'): break
         
         if not json_str:
             raise RuntimeError("Could not parse loudnorm stats from ffmpeg's first pass.")
@@ -69,7 +59,6 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
         measured_stats = json.loads(json_str)
         logging.info(f"FFmpeg Pass 1 stats: {measured_stats}")
 
-        # Pass 2: Apply the measured parameters to normalize the audio.
         command_pass2 = [
             'ffmpeg', '-i', input_path,
             '-af', f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:"
@@ -81,11 +70,9 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
             '-y', # Overwrite output file if it exists
             output_path
         ]
-        
         subprocess.run(command_pass2, check=True, capture_output=True)
         logging.info(f"FFmpeg Pass 2 complete. Normalized file at {output_path}")
         return output_path
-
     except Exception as e:
         logging.exception("CRITICAL ERROR during disk-based normalization. Falling back.")
         # Also log the stdout/stderr from the failed command for more clues
@@ -94,28 +81,21 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
         subprocess.run(['cp', input_path, output_path], check=True)
         return output_path
 
-# --- The core processing logic, now calling the new, correct normalization function ---
 
 def process_audio_in_chunks(settings):
     input_file = settings.get("input_file")
     output_file = settings.get("output_file")
-
     if not input_file or not output_file:
         raise ValueError("Input or output file not specified.")
 
     logging.info(f"Starting DISK-BASED CHUNKED process_audio for {input_file}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
-        # This is a potential memory spike. Let's log it.
-        logging.info("Loading initial audio file info with pydub...")
-        log_memory_usage()
         try:
             audio_info = AudioSegment.from_file(input_file)
         except Exception as e:
             logging.exception("CRITICAL: Failed to load initial audio file with pydub.")
             raise
-        log_memory_usage()
-
 
         chunk_size_ms = 30 * 1000
         num_chunks = (len(audio_info) // chunk_size_ms) + 1
@@ -182,26 +162,31 @@ def generate_cover_art(prompt, audio_filename_base, bucket):
         gcp_location = 'us-east1'
         logging.info(f"Initializing Vertex AI for project '{gcp_project}' in '{gcp_location}'")
         vertexai.init(project=gcp_project, location=gcp_location)
+        logging.info("Vertex AI initialized successfully.")
     except Exception:
         logging.exception("CRITICAL ERROR during Vertex AI initialization.")
         raise
     try:
         logging.info("Loading ImageGenerationModel...")
         model = ImageGenerationModel.from_pretrained("imagegeneration@005")
+        logging.info("ImageGenerationModel loaded successfully.")
     except Exception:
         logging.exception("CRITICAL ERROR loading the Imagen model.")
         raise
     try:
         logging.info("Calling model.generate_images()...")
         images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
+        logging.info("model.generate_images() call completed.")
     except Exception:
         logging.exception("CRITICAL ERROR during the generate_images API call.")
         raise
     try:
         with tempfile.NamedTemporaryFile(suffix=".png") as temp_image_file:
+            logging.info(f"Saving generated image to temporary file: {temp_image_file.name}")
             images[0].save(location=temp_image_file.name, include_generation_parameters=True)
             image_filename = f"art_{os.path.splitext(audio_filename_base)[0]}.png"
             image_blob_name = f"processed/{image_filename}"
+            logging.info(f"Uploading image to GCS at: {image_blob_name}")
             blob = bucket.blob(image_blob_name)
             blob.upload_from_filename(temp_image_file.name, content_type='image/png')
             logging.info("Image uploaded to GCS successfully.")
@@ -336,3 +321,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
