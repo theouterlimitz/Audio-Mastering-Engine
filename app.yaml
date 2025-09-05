@@ -1,21 +1,18 @@
 # This configuration is for the 'staging' service.
-# It uses an F4 instance to stay within default quotas while we
-# wait for a B8 quota increase.
+# It uses a heavy-duty B8 backend instance with manual scaling.
 service: staging
 runtime: custom
 env: flex
 
-# Switched back to F4 to avoid QUOTA_EXCEEDED errors
-resources:
-  cpu: 2
-  memory_gb: 4
-  disk_size_gb: 10
-  
+instance_class: B8
+
+manual_scaling:
+  instances: 1
+
+# This value has been slightly changed to force a full service update.
 automatic_scaling:
-  # The Flexible Environment requires at least 1 minimum instance.
   min_num_instances: 1
-  max_num_instances: 2
-  cool_down_period_sec: 180
+  max_num_instances: 1
+  cool_down_period_sec: 181
   cpu_utilization:
     target_utilization: 0.7
-
