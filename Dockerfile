@@ -1,10 +1,11 @@
 # Dockerfile (Final Architecture)
-# This version explicitly installs the python3-pil package using apt-get.
-# This is a more robust installation method than pip for this specific library
-# and guarantees that the PIL module is available to the Python runtime.
+# This version adds a LABEL to force a full, clean cache invalidation
+# during the build process, ensuring all components are updated.
 
 # Use the official Python 3.11 image as a base
 FROM python:3.11-slim
+
+LABEL author="Synesthesia Project"
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -21,11 +22,4 @@ COPY . .
 
 # The command to run your app using Gunicorn
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
-
-
-
-
-   
-
-    
 
