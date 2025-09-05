@@ -3,27 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Mastering Suite (App Engine)</title>
+    <title>Audio Mastering Suite (Staging)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
         .slider-thumb::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 16px;
-            height: 16px;
-            background: #4F46E5;
-            cursor: pointer;
+            -webkit-appearance: none; appearance: none;
+            width: 16px; height: 16px;
+            background: #4F46E5; cursor: pointer;
             border-radius: 50%;
+        }
+        .progress-bar {
+            background-color: #374151;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            width: 100%;
+            height: 1.5rem;
+        }
+        .progress-bar-inner {
+            background-color: #4f46e5;
+            height: 100%;
+            width: 0%;
+            transition: width 0.5s ease-in-out;
+            text-align: center;
+            line-height: 1.5rem;
+            color: white;
+            font-weight: 600;
         }
     </style>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 </head>
-<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen py-12">
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen py-12 px-4">
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
-        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite</h1>
+        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite (Staging)</h1>
         <p class="text-center text-gray-400 mb-8">Powered by Google App Engine</p>
 
         <form id="uploadForm" class="space-y-6">
@@ -37,13 +51,13 @@
                     <span id="fileName" class="text-gray-400 truncate">No file selected</span>
                 </div>
             </div>
-            
-            <!-- NEW: AI Cover Art Prompt -->
-            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                <label for="art_prompt" class="block text-sm font-medium text-gray-300 mb-2">AI Cover Art Prompt (Optional)</label>
-                <textarea id="art_prompt" rows="2" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., A vibrant synthwave sunset over a retro cityscape"></textarea>
-            </div>
 
+            <!-- AI Art Prompt -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <label for="artPrompt" class="block text-sm font-medium text-gray-300 mb-2">AI Cover Art Prompt (Optional)</label>
+                <textarea id="artPrompt" rows="3" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., A vibrant synthwave sunset over a retro cityscape"></textarea>
+            </div>
+            
             <!-- Parameters -->
             <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
                  <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
@@ -108,67 +122,75 @@
             
              <!-- Multiband -->
               <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                  <div class="flex items-center">
-                      <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
-                      <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
-                  </div>
-                  <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                      <!-- Low Band -->
-                      <div>
-                          <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="low_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25.0 dB</span>
-                          </div>
-                      </div>
-                      <div>
-                          <label for="low_ratio" class="block text-sm font-medium text-gray-300">Low Ratio</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="low_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0 :1</span>
-                          </div>
-                      </div>
-                      <!-- Mid Band -->
-                      <div>
-                          <label for="mid_thresh" class="block text-sm font-medium text-gray-300">Mid Thresh (dB)</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="mid_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20.0 dB</span>
-                          </div>
-                      </div>
-                      <div>
-                          <label for="mid_ratio" class="block text-sm font-medium text-gray-300">Mid Ratio</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="mid_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0 :1</span>
-                          </div>
-                      </div>
-                      <!-- High Band -->
-                      <div>
-                          <label for="high_thresh" class="block text-sm font-medium text-gray-300">High Thresh (dB)</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="high_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15.0 dB</span>
-                          </div>
-                      </div>
-                      <div>
-                          <label for="high_ratio" class="block text-sm font-medium text-gray-300">High Ratio</label>
-                          <div class="flex items-center space-x-3">
-                              <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
-                              <span id="high_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0 :1</span>
-                          </div>
-                      </div>
-                  </div>
-             </div>
+                 <div class="flex items-center">
+                     <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
+                     <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
+                 </div>
+                 <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                     <!-- Low Band -->
+                     <div>
+                         <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="low_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25.0 dB</span>
+                         </div>
+                     </div>
+                     <div>
+                         <label for="low_ratio" class="block text-sm font-medium text-gray-300">Low Ratio</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="low_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0 :1</span>
+                         </div>
+                     </div>
+                     <!-- Mid Band -->
+                     <div>
+                         <label for="mid_thresh" class="block text-sm font-medium text-gray-300">Mid Thresh (dB)</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="mid_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20.0 dB</span>
+                         </div>
+                     </div>
+                     <div>
+                         <label for="mid_ratio" class="block text-sm font-medium text-gray-300">Mid Ratio</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="mid_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0 :1</span>
+                         </div>
+                     </div>
+                     <!-- High Band -->
+                     <div>
+                         <label for="high_thresh" class="block text-sm font-medium text-gray-300">High Thresh (dB)</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="high_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15.0 dB</span>
+                         </div>
+                     </div>
+                     <div>
+                         <label for="high_ratio" class="block text-sm font-medium text-gray-300">High Ratio</label>
+                         <div class="flex items-center space-x-3">
+                             <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                             <span id="high_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0 :1</span>
+                         </div>
+                     </div>
+                 </div>
+            </div>
 
             <!-- Submit Button and Status -->
             <div>
-                <!-- NEW: Container for results -->
-                <div id="resultsContainer" class="mb-4"></div>
                 <button type="submit" id="submitButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 flex items-center justify-center">
                     Upload & Process
                 </button>
-                <div id="status" class="mt-4 text-center text-gray-400 h-6"></div>
+                <div id="status" class="mt-4 text-center text-gray-400 h-auto min-h-[1.5rem]"></div>
+                
+                <!-- NEW Progress Bar -->
+                <div id="progressContainer" class="hidden mt-4">
+                    <div id="progressText" class="text-center text-sm text-indigo-300 mb-1"></div>
+                    <div class="progress-bar">
+                        <div id="progressBarInner" class="progress-bar-inner">0%</div>
+                    </div>
+                </div>
+
+                <div id="resultsContainer" class="mt-4 text-center space-y-4"></div>
             </div>
         </form>
     </div>
@@ -178,13 +200,18 @@
         const fileInput = document.getElementById('fileInput');
         const fileNameDisplay = document.getElementById('fileName');
         const statusDisplay = document.getElementById('status');
-        const resultsContainer = document.getElementById('resultsContainer');
         const submitButton = document.getElementById('submitButton');
         const useMultibandCheckbox = document.getElementById('useMultiband');
         const multibandControls = document.getElementById('multibandControls');
-        const artPromptInput = document.getElementById('art_prompt'); // NEW
+        const resultsContainer = document.getElementById('resultsContainer');
+        const artPromptInput = document.getElementById('artPrompt'); // <-- Get the art prompt element
         
-        const API_BASE_URL = '';
+        // Progress Bar Elements
+        const progressContainer = document.getElementById('progressContainer');
+        const progressText = document.getElementById('progressText');
+        const progressBarInner = document.getElementById('progressBarInner');
+        
+        const API_BASE_URL = ''; // Relative to current host
 
         const sliders = [
             { id: 'analog_character', display: 'analog_characterValue', unit: ' %', fixed: 0 },
@@ -225,7 +252,7 @@
             e.preventDefault();
             const file = fileInput.files[0];
             if (!file) {
-                showStatus('Error: Please select a file.', true);
+                showStatus({ isError: true, message: 'Please select a file.' });
                 return;
             }
 
@@ -238,10 +265,20 @@
             });
             settings.multiband = useMultibandCheckbox.checked;
             settings.original_filename = file.name;
-            settings.art_prompt = artPromptInput.value.trim(); // NEW
+            
+            // --- THIS IS THE BULLETPROOF FIX ---
+            // Explicitly get the value and add it to settings if it's not empty.
+            const artPromptValue = artPromptInput.value.trim();
+            if (artPromptValue) {
+                settings.art_prompt = artPromptValue;
+            }
+            // --- END OF FIX ---
+
+            // Log the settings object to the console for definitive proof
+            console.log("Submitting settings:", settings);
 
             try {
-                showStatus('Requesting upload permission...');
+                showStatus({ message: 'Requesting upload permission...' });
                 const presignedResponse = await fetch(`${API_BASE_URL}/generate-upload-url`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -250,11 +287,11 @@
 
                 if (!presignedResponse.ok) {
                     const errorData = await presignedResponse.json();
-                    throw new Error(`Could not get upload URL from server (status: ${presignedResponse.status}). ${errorData.error || ''}`);
+                    throw new Error(errorData.error || `Could not get upload URL (status: ${presignedResponse.status}).`);
                 }
                 const { url, gcs_uri } = await presignedResponse.json();
 
-                showStatus('Uploading file...');
+                showStatus({ message: 'Uploading file...' });
                 const uploadResponse = await fetch(url, {
                     method: 'PUT',
                     headers: { 'Content-Type': file.type },
@@ -262,7 +299,7 @@
                 });
                 if (!uploadResponse.ok) throw new Error('File upload to cloud storage failed.');
                 
-                showStatus('Starting processing job...');
+                showStatus({ message: 'Starting processing job...' });
                 const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -270,59 +307,68 @@
                 });
                 
                 if (!startResponse.ok) {
-                    const errorData = await startResponse.json();
-                    throw new Error(`Could not start processing job. ${errorData.error || ''}`);
+                     const errorData = await startResponse.json();
+                     throw new Error(errorData.error || 'Could not start processing job.');
                 }
-                const { processed_filename } = await startResponse.json();
+                const { processed_filename, image_filename } = await startResponse.json();
                 
-                pollForStatus(processed_filename);
+                pollForStatus(processed_filename, image_filename);
 
             } catch (error) {
                 console.error('Upload process failed:', error);
-                showStatus(`Error: ${error.message}`, true);
+                showStatus({ isError: true, message: `Error: ${error.message}` });
                 setProcessingState(false);
             }
         });
 
-        function pollForStatus(filename) {
-            showStatus('Processing in the cloud... (this may take several minutes)');
+        function pollForStatus(audioFilename, imageFilename) {
+            showStatus({ message: 'Processing in the cloud... (this may take several minutes)' });
+            progressContainer.classList.remove('hidden');
+
             const interval = setInterval(async () => {
                 try {
-                    const response = await fetch(`${API_BASE_URL}/status?filename=${encodeURIComponent(filename)}`);
+                    const response = await fetch(`${API_BASE_URL}/status?audio_filename=${encodeURIComponent(audioFilename)}&image_filename=${encodeURIComponent(imageFilename)}`);
+                    if (!response.ok) { // Handle non-200 responses
+                        throw new Error(`Status check failed with status: ${response.status}`);
+                    }
                     const data = await response.json();
 
-                    if (data.status === 'done') {
+                    if (data.status === 'processing' && data.progress_status) {
+                        progressText.textContent = data.progress_status.status;
+                        progressBarInner.style.width = `${data.progress_status.progress}%`;
+                        progressBarInner.textContent = `${data.progress_status.progress}%`;
+                    } else if (data.status === 'done') {
                         clearInterval(interval);
-                        showStatus('Processing complete!', false);
+                        showStatus({ message: 'Processing complete!' });
                         setProcessingState(false);
-                        showResults(data); // NEW: Call new function
+                        showResults(data);
                     } else if (data.status === 'error') {
                         clearInterval(interval);
-                        showStatus(`Error: ${data.message}`, true);
+                        showStatus({ isError: true, message: `Error: ${data.message}` });
                          setProcessingState(false);
                     }
                 } catch (error) {
                     clearInterval(interval);
-                    showStatus('Error: Could not check status.', true);
-                     setProcessingState(false);
+                    showStatus({ isError: true, message: 'Error: Could not check status.' });
+                    setProcessingState(false);
                 }
-            }, 10000); 
+            }, 5000); 
         }
 
-        function showStatus(message, isError = false) {
+        function showStatus({ isError = false, message = '' }) {
             statusDisplay.textContent = message;
-            statusDisplay.style.color = isError ? '#F87171' : '#8B949E';
+            statusDisplay.style.color = isError ? '#F87171' : '#9ca3af';
         }
 
-        function setProcessingState(isProcessing, message = "Upload & Process") {
+        function setProcessingState(isProcessing) {
             submitButton.disabled = isProcessing;
             const elementsToDisable = document.querySelectorAll('input, button, textarea');
             elementsToDisable.forEach(el => {
-                if(el.id !== 'submitButton') el.disabled = isProcessing;
+                el.disabled = isProcessing;
             });
 
             if (isProcessing) {
-                submitButton.textContent = message;
+                submitButton.textContent = 'Processing...';
                 submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
                 submitButton.classList.add('bg-gray-600', 'cursor-not-allowed');
                 resultsContainer.innerHTML = '';
@@ -330,37 +376,32 @@
                 submitButton.textContent = "Upload & Process";
                 submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
                 submitButton.classList.remove('bg-gray-600', 'cursor-not-allowed');
+                progressContainer.classList.add('hidden');
             }
         }
         
-        // NEW: Function to show final results
         function showResults(data) {
             resultsContainer.innerHTML = ''; // Clear previous results
 
-            let content = '<div class="space-y-4">';
-            // Show the image if we have a URL for it
-            if (data.image_url) {
-                content += `
-                    <div>
-                        <h3 class="text-lg font-semibold text-white mb-2 text-center">Generated Cover Art</h3>
-                        <img src="${data.image_url}" alt="AI Generated Cover Art" class="rounded-lg shadow-lg mx-auto max-w-sm w-full">
-                    </div>
-                `;
+            if (data.art_url) {
+                const img = document.createElement('img');
+                img.src = data.art_url;
+                img.alt = "Generated AI Cover Art";
+                img.className = "w-full max-w-sm mx-auto rounded-lg shadow-lg";
+                resultsContainer.appendChild(img);
             }
-            // Always show the download button if we have a URL for it
+
             if (data.download_url) {
-                content += `
-                    <a href="${data.download_url}"
-                       target="_blank"
-                       rel="noopener noreferrer"
-                       class="w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 text-center">
-                        Download Mastered File
-                    </a>
-                `;
+                const link = document.createElement('a');
+                link.href = data.download_url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.className = "w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 mt-4";
+                link.textContent = "Download Mastered File";
+                resultsContainer.appendChild(link);
             }
-            content += '</div>';
-            resultsContainer.innerHTML = content;
         }
+
     </script>
 </body>
 </html>
