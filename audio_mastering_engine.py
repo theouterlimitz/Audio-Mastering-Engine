@@ -1,7 +1,6 @@
 # audio_mastering_engine.py (Final Architecture)
-# This version removes the capture_output=True flag from all long-running ffmpeg
-# subprocess calls, which was the hidden cause of the catastrophic memory failures. This
-# ensures a true, low-memory, disk-to-disk pipeline.
+# This version corrects the NameError for input_blob and ensures the
+# true, low-memory, disk-to-disk pipeline can run to completion.
 
 import os
 import tempfile
@@ -41,7 +40,6 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
             '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json',
             '-f', 'null', '-'
         ]
-        # We MUST capture output here to get the JSON stats
         result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True, check=True)
         
         output_lines = result_pass1.stderr.splitlines()
@@ -67,12 +65,10 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
                    f"offset={measured_stats['target_offset']}",
             '-y', output_path
         ]
-        # Run pass 2, but do NOT capture output in memory
         subprocess.run(command_pass2, check=True)
         logging.info(f"FFmpeg Pass 2 complete. Normalized file at {output_path}")
         return output_path
     except subprocess.CalledProcessError as e:
-        # If the command fails, log its stderr for debugging
         logging.exception("CRITICAL FFMPEG ERROR during disk-based normalization.")
         logging.error(f"FFMPEG STDERR:\n{e.stderr}")
         subprocess.run(['cp', input_path, output_path], check=True)
@@ -98,7 +94,6 @@ def process_audio_with_ffmpeg_pipeline(settings):
             '-segment_time', str(chunk_duration_sec),
             '-c', 'copy', os.path.join(temp_dir, 'input_chunk_%04d.wav')
         ]
-        # Do NOT capture output in memory
         subprocess.run(split_command, check=True)
         logging.info("Splitting complete.")
 
@@ -136,7 +131,6 @@ def process_audio_with_ffmpeg_pipeline(settings):
         with open(file_list_path, 'w') as f:
             for filename in processed_chunk_files:
                 f.write(f"file '{os.path.basename(filename)}'\n")
-        # Do NOT capture output in memory
         subprocess.run(
             ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', 'filelist.txt', '-c', 'copy', 'concatenated.wav'],
             check=True, cwd=temp_dir
@@ -151,7 +145,6 @@ def process_audio_with_ffmpeg_pipeline(settings):
             )
         
         logging.info("Applying final soft limit...")
-        # Do NOT capture output in memory
         subprocess.run(
             ['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file],
             check=True
@@ -166,12 +159,15 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     bucket_name, blob_name = gcs_uri[5:].split('/', 1)
     bucket = storage_client.bucket(bucket_name)
 
+    # <<< THIS IS THE FIX >>>
+    # The input_blob variable must be defined here, before the with block.
+    input_blob = bucket.blob(blob_name)
+
     with tempfile.TemporaryDirectory() as base_temp_dir:
         temp_in_path = os.path.join(base_temp_dir, 'input.wav')
         temp_out_path = os.path.join(base_temp_dir, 'output.wav')
         
         logging.info(f"Downloading {gcs_uri} to {temp_in_path}")
-        input_blob = bucket.blob(blob_name)
         input_blob.download_to_filename(temp_in_path)
         log_memory_usage()
         
@@ -332,4 +328,11 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
+
+
+    
+    
+
+    
 
