@@ -1,4 +1,3 @@
-requirements.txt (Final Diagnostic Version with Memory Logging)
 Flask==3.0.0
 gunicorn==21.2.0
 numpy==1.26.4
