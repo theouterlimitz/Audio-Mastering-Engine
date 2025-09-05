@@ -1,23 +1,14 @@
 # This configuration is for the 'staging' service.
-# It uses upgraded resources for large files.
+# It uses a MEMORY-OPTIMIZED instance class for large file processing.
 service: staging
 runtime: custom
 env: flex
 
-# Upgraded resources to handle large audio files (2 CPU, 4GB RAM)
-resources:
-  cpu: 2
-  memory_gb: 4
-  disk_size_gb: 10
-  
-automatic_scaling:
-  # The Flexible Environment requires at least 1 minimum instance.
-  min_num_instances: 1
-  # Use the correct syntax for the Flexible Environment
-  max_num_instances: 2
-  cool_down_period_sec: 180
-  cpu_utilization:
-    target_utilization: 0.7
+# Upgraded to a memory-optimized instance (M1)
+# This provides more RAM to handle the final file concatenation.
+instance_class: M1
 
-    
+# The M1 class requires manual scaling settings.
+manual_scaling:
+  instances: 1
 

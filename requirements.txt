@@ -1,4 +1,4 @@
-# requirements.txt (Clean Version)
+requirements.txt (Final Diagnostic Version with Memory Logging)
 Flask==3.0.0
 gunicorn==21.2.0
 numpy==1.26.4
@@ -9,3 +9,4 @@ google-cloud-storage==2.14.0
 google-cloud-tasks==2.14.2
 google-auth==2.23.3
 google-cloud-aiplatform==1.55.0
+psutil==5.9.8

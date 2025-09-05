@@ -1,7 +1,7 @@
-# audio_mastering_engine.py (Final Diagnostic Version)
-# This version replaces all print() statements with Python's standard logging
-# library. This provides better context and ensures that any and all exceptions,
-# especially silent ones, are written to the stderr log for definitive debugging.
+# audio_mastering_engine.py (Final Diagnostic Version with Memory Logging)
+# This version adds the 'psutil' library to log memory usage at each
+# critical step, giving us a definitive "black box recorder" to see
+# exactly where a memory leak or spike might be occurring.
 
 import os
 import tempfile
@@ -9,6 +9,7 @@ import numpy as np
 import subprocess
 import json
 import logging
+import psutil # <-- The black box recorder
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
@@ -26,10 +27,19 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s'
 )
 
-# --- The core processing logic, now with robust logging ---
+# --- NEW: Memory Logging Helper ---
+def log_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    # RSS is the Resident Set Size, the non-swapped physical memory a process has used.
+    logging.info(f"MEMORY USAGE: {mem_info.rss / 1024 ** 2:.2f} MB")
+
+
+# --- The core processing logic, now with robust memory logging ---
 
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     logging.info(f"Starting true disk-based loudness normalization for {input_path}...")
+    log_memory_usage()
     try:
         command_pass1 = [
             'ffmpeg', '-i', input_path,
@@ -51,6 +61,7 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
 
         measured_stats = json.loads(json_str)
         logging.info(f"FFmpeg Pass 1 stats: {measured_stats}")
+        log_memory_usage()
 
         command_pass2 = [
             'ffmpeg', '-i', input_path,
@@ -60,15 +71,15 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
                    f"measured_TP={measured_stats['input_tp']}:"
                    f"measured_thresh={measured_stats['input_thresh']}:"
                    f"offset={measured_stats['target_offset']}",
-            '-y', # Overwrite output file if it exists
+            '-y', 
             output_path
         ]
         subprocess.run(command_pass2, check=True, capture_output=True)
         logging.info(f"FFmpeg Pass 2 complete. Normalized file at {output_path}")
+        log_memory_usage()
         return output_path
     except Exception as e:
         logging.exception("CRITICAL ERROR during disk-based normalization. Falling back.")
-        # Also log the stdout/stderr from the failed command for more clues
         if 'result_pass1' in locals() and result_pass1.stderr:
              logging.error(f"FFMPEG Pass 1 STDERR:\n{result_pass1.stderr}")
         subprocess.run(['cp', input_path, output_path], check=True)
@@ -82,10 +93,14 @@ def process_audio_in_chunks(settings):
         raise ValueError("Input or output file not specified.")
 
     logging.info(f"Starting DISK-BASED CHUNKED process_audio for {input_file}")
+    log_memory_usage()
 
     with tempfile.TemporaryDirectory() as temp_dir:
         try:
+            # This is a potential memory spike. Let's log it.
+            logging.info("Loading initial audio file info with pydub...")
             audio_info = AudioSegment.from_file(input_file)
+            log_memory_usage()
         except Exception as e:
             logging.exception("CRITICAL: Failed to load initial audio file with pydub.")
             raise
@@ -97,6 +112,9 @@ def process_audio_in_chunks(settings):
 
         for i in range(num_chunks):
             try:
+                # Log memory before processing each chunk
+                logging.info(f"Processing chunk {i+1}/{num_chunks}...")
+                log_memory_usage()
                 start_ms = i * chunk_size_ms
                 end_ms = start_ms + chunk_size_ms
                 chunk = audio_info[start_ms:end_ms]
@@ -114,12 +132,13 @@ def process_audio_in_chunks(settings):
                 chunk_filename = os.path.join(temp_dir, f"chunk_{i:04d}.wav")
                 processed_chunk.export(chunk_filename, format="wav")
                 chunk_files.append(chunk_filename)
-                logging.info(f"Processed and saved chunk {i+1}/{num_chunks}")
+                logging.info(f"Saved chunk {i+1}/{num_chunks}")
             except Exception as e:
                 logging.exception(f"CRITICAL: Failed during processing of chunk {i+1}.")
                 raise
 
         logging.info("Concatenating all processed chunks using ffmpeg...")
+        log_memory_usage()
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
         file_list_path = os.path.join(temp_dir, "filelist.txt")
         with open(file_list_path, 'w') as f:
@@ -130,6 +149,7 @@ def process_audio_in_chunks(settings):
             check=True, cwd=temp_dir
         )
         logging.info("Concatenation complete.")
+        log_memory_usage()
         
         final_file_to_export = concatenated_file_path
         if settings.get("lufs") is not None:
@@ -139,57 +159,21 @@ def process_audio_in_chunks(settings):
             )
         
         logging.info("Applying final soft limit...")
+        log_memory_usage()
         subprocess.run(
             ['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file],
             check=True
         )
         logging.info(f"Finished DISK-BASED processing, exported to {output_file}")
+        log_memory_usage()
 
 
-# --- All other functions (generate_cover_art, process_audio_from_gcs, etc.) are updated with logging ---
-
-def generate_cover_art(prompt, audio_filename_base, bucket):
-    logging.info("--- Starting generate_cover_art ---")
-    try:
-        gcp_project = os.environ.get('GCP_PROJECT_ID')
-        gcp_location = 'us-east1'
-        logging.info(f"Initializing Vertex AI for project '{gcp_project}' in '{gcp_location}'")
-        vertexai.init(project=gcp_project, location=gcp_location)
-        logging.info("Vertex AI initialized successfully.")
-    except Exception:
-        logging.exception("CRITICAL ERROR during Vertex AI initialization.")
-        raise
-    try:
-        logging.info("Loading ImageGenerationModel...")
-        model = ImageGenerationModel.from_pretrained("imagegeneration@005")
-        logging.info("ImageGenerationModel loaded successfully.")
-    except Exception:
-        logging.exception("CRITICAL ERROR loading the Imagen model.")
-        raise
-    try:
-        logging.info("Calling model.generate_images()...")
-        images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
-        logging.info("model.generate_images() call completed.")
-    except Exception:
-        logging.exception("CRITICAL ERROR during the generate_images API call.")
-        raise
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".png") as temp_image_file:
-            logging.info(f"Saving generated image to temporary file: {temp_image_file.name}")
-            images[0].save(location=temp_image_file.name, include_generation_parameters=True)
-            image_filename = f"art_{os.path.splitext(audio_filename_base)[0]}.png"
-            image_blob_name = f"processed/{image_filename}"
-            logging.info(f"Uploading image to GCS at: {image_blob_name}")
-            blob = bucket.blob(image_blob_name)
-            blob.upload_from_filename(temp_image_file.name, content_type='image/png')
-            logging.info("Image uploaded to GCS successfully.")
-            return image_blob_name
-    except Exception:
-        logging.exception("CRITICAL ERROR saving or uploading the image.")
-        raise
-
+# --- The rest of the file (generate_cover_art, process_audio_from_gcs, etc.) remains the same ---
+# But we will add memory logging to the main function
 
 def process_audio_from_gcs(gcs_uri, settings, key_file_path):
+    logging.info("--- TOP LEVEL: process_audio_from_gcs START ---")
+    log_memory_usage()
     storage_client = storage.Client.from_service_account_json(key_file_path)
     if not gcs_uri.startswith('gs://'):
         raise ValueError("Invalid GCS URI")
@@ -199,33 +183,67 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     with tempfile.NamedTemporaryFile(suffix=os.path.splitext(blob_name)[1]) as temp_in:
         logging.info(f"Downloading {gcs_uri} to {temp_in.name}")
         input_blob.download_to_filename(temp_in.name)
+        log_memory_usage()
         original_filename = settings.get('original_filename', 'unknown.wav')
         output_filename_base = f"mastered_{original_filename}"
         with tempfile.NamedTemporaryFile(suffix=".wav") as temp_out:
             new_settings = settings.copy()
             new_settings["input_file"] = temp_in.name
             new_settings["output_file"] = temp_out.name
-            
-            # This is our main processing function with all the logging
             process_audio_in_chunks(new_settings)
-
             output_blob_name = f"processed/{output_filename_base}"
             output_blob = bucket.blob(output_blob_name)
             logging.info(f"Uploading processed file to gs://{bucket_name}/{output_blob_name}")
             output_blob.upload_from_filename(temp_out.name, content_type='audio/wav')
-            
             art_prompt = settings.get("art_prompt")
             if art_prompt and art_prompt.strip():
                 try:
                     generate_cover_art(art_prompt, output_filename_base, bucket)
                 except Exception:
-                    logging.error("Cover art generation failed, but mastering succeeded. See exception log above.")
-            
+                    logging.error("Cover art generation failed, but mastering succeeded.")
             complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
             complete_flag_blob.upload_from_string("done")
+    logging.info("--- TOP LEVEL: process_audio_from_gcs COMPLETE ---")
+    log_memory_usage()
 
-# --- All the other helper functions (audio_segment_to_float_array, etc.) remain unchanged ---
-# These are less likely to be the source of a memory leak, so we leave them as-is for now.
+def generate_cover_art(prompt, audio_filename_base, bucket):
+    logging.info("--- Starting generate_cover_art ---")
+    log_memory_usage()
+    try:
+        gcp_project = os.environ.get('GCP_PROJECT_ID')
+        gcp_location = 'us-east1'
+        logging.info(f"Initializing Vertex AI for project '{gcp_project}' in '{gcp_location}'")
+        vertexai.init(project=gcp_project, location=gcp_location)
+    except Exception:
+        logging.exception("CRITICAL ERROR during Vertex AI initialization.")
+        raise
+    try:
+        logging.info("Loading ImageGenerationModel...")
+        model = ImageGenerationModel.from_pretrained("imagegeneration@005")
+    except Exception:
+        logging.exception("CRITICAL ERROR loading the Imagen model.")
+        raise
+    try:
+        logging.info("Calling model.generate_images()...")
+        images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
+        log_memory_usage()
+    except Exception:
+        logging.exception("CRITICAL ERROR during the generate_images API call.")
+        raise
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".png") as temp_image_file:
+            images[0].save(location=temp_image_file.name, include_generation_parameters=True)
+            image_filename = f"art_{os.path.splitext(audio_filename_base)[0]}.png"
+            image_blob_name = f"processed/{image_filename}"
+            blob = bucket.blob(image_blob_name)
+            blob.upload_from_filename(temp_image_file.name, content_type='image/png')
+            logging.info("Image uploaded to GCS successfully.")
+            return image_blob_name
+    except Exception:
+        logging.exception("CRITICAL ERROR saving or uploading the image.")
+        raise
+
+# --- The rest of the helper functions are unchanged ---
 
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
