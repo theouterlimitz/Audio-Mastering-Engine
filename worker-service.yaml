@@ -1,8 +1,8 @@
 # worker-service.yaml
-# Configuration for the powerful backend worker service.
+# The final, correct configuration for the STAGING backend worker service.
 
 runtime: python312
-service: worker
+service: staging-worker  # <-- This is the critical fix. The name now matches.
 instance_class: B8
 
 manual_scaling:

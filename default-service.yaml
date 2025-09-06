@@ -1,9 +1,18 @@
 # default-service.yaml
-# Configuration for the STAGING frontend service.
+# The final, correct configuration for the STAGING frontend service.
 
 runtime: python312
-service: staging-default  # <-- This is the key change
+service: staging-default
 instance_class: F2
 
-entrypoint: gunicorn -b :$PORT main:app
+# This tells App Engine to use its built-in, optimized server,
+# which is more reliable than a manual entrypoint for the Standard Environment.
+handlers:
+- url: /.*
+  script: auto
+
+# This allows the instance to scale down to zero to save costs
+# when there are no users, which is ideal for a frontend.
+automatic_scaling:
+  max_instances: 1
 
