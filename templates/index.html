@@ -181,7 +181,6 @@
         const resultsContainer = document.getElementById('resultsContainer');
         const artPromptInput = document.getElementById('artPrompt');
         
-        // THIS IS THE FIX for "Failed to fetch"
         const API_BASE_URL = 'https://staging-default-dot-audio-mastering-v2.ue.r.appspot.com';
 
         const sliders = [
@@ -266,7 +265,9 @@
                 if (!uploadResponse.ok) throw new Error('File upload to cloud storage failed.');
                 
                 showStatus({ message: 'Starting processing job...' });
-                const startResponse = await fetch(`${API_BE_URL}/start-processing`, {
+                // *** THIS IS THE FIX ***
+                // Changed API_BE_URL to the correct API_BASE_URL
+                const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
