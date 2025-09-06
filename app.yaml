@@ -1,17 +1,18 @@
-# This configuration is for the 'staging' service.
-# It uses a heavy-duty B8 backend instance with the correct manual_scaling.
+# This file configures your Google App Engine service.
+# Place it in the root directory of your project.
+
+runtime: python311 # Or python312, etc. Match your environment.
+instance_class: F2
+
+# The 'instance_class: F2' line is the critical fix.
+# It requests a machine with 512MB of RAM instead of the 256MB default,
+# providing the necessary headroom for your audio processing libraries.
+
+# It is also good practice to define your service name explicitly
+# to avoid any future routing confusion.
 service: staging
-runtime: custom
-env: flex
 
-instance_class: B8
-
-# Manual scaling is REQUIRED for larger instance classes like B8.
-# This keeps one powerful instance running for our worker tasks.
-manual_scaling:
-  instances: 1
-
-    
-    
-
-
+# Automatic scaling is standard for this kind of workload.
+automatic_scaling:
+  min_instances: 0
+  max_instances: 2 # You can adjust this as needed.
