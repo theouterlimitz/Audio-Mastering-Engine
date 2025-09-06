@@ -1,0 +1,14 @@
+# dispatch.yaml
+# Routes traffic to the correct service.
+
+dispatch:
+  # This rule MUST come first.
+  # It sends all background task traffic specifically to the 'worker' service.
+  - url: "*/process-task"
+    service: worker
+
+  # This is the catch-all rule.
+  # It sends all other user-facing traffic to the 'default' service.
+  - url: "*/*"
+    service: default
+

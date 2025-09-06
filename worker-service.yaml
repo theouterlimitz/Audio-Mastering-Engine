@@ -1,0 +1,12 @@
+# worker-service.yaml
+# Configuration for the powerful backend worker service.
+
+runtime: python312
+service: worker
+instance_class: B8
+
+manual_scaling:
+  instances: 1
+
+entrypoint: gunicorn --timeout 600 -b :$PORT worker:app
+

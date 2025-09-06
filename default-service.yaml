@@ -1,0 +1,9 @@
+# default-service.yaml
+# Configuration for the lightweight frontend service.
+
+runtime: python312
+service: default
+instance_class: F2
+
+entrypoint: gunicorn -b :$PORT main:app
+
