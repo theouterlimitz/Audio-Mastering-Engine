@@ -1,19 +1,18 @@
-# This file configures your Google App Engine service.
-# It uses 'basic_scaling' which is the correct way to handle
-# long-running background tasks in modern App Engine environments.
+# This is the final, correct configuration for a long-running background task worker.
+# It uses a Backend instance type (B-class) and manual scaling to eliminate timeouts.
 
 runtime: python311
-instance_class: F2
 service: staging
 entrypoint: gunicorn -b :$PORT main:app
 
-# --- THIS IS THE FIX ---
-# Switch from 'automatic_scaling' to 'basic_scaling'.
-# This allows for longer-running instances that are ideal for
-# background processing jobs like audio mastering.
-basic_scaling:
-  # Sets the instance to shut down after 15 minutes of inactivity.
-  idle_timeout: 15m
-  # Specifies the maximum number of instances to create.
-  max_instances: 2
+# Use a Backend instance class, which is designed for long-running processes
+# and does not have the 60-second request timeout. A B4 instance provides
+# ample memory (1024MB) and CPU for audio processing.
+instance_class: B4
+
+# Use manual scaling to ensure an instance is always ready to process tasks.
+# This also bypasses the short timeouts associated with automatic scaling.
+# 'instances: 1' is perfect for a staging/development queue.
+manual_scaling:
+  instances: 1
 
