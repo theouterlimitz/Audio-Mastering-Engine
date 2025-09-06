@@ -1,12 +1,20 @@
 # worker-service.yaml
-# The final, correct configuration for the STAGING backend worker service.
+# Deploys the backend worker service using the App Engine Flexible Environment.
+# This provides the power and patience needed for long-running tasks.
 
-runtime: python312
-service: staging-worker  # <-- This is the critical fix. The name now matches.
-instance_class: B8
+runtime: custom
+env: flex
+service: staging-worker # The correct name for our staging backend
 
-manual_scaling:
-  instances: 1
+# Allocate powerful resources for audio and AI processing.
+resources:
+  cpu: 1
+  memory_gb: 2
+  disk_size_gb: 10
 
-entrypoint: gunicorn --timeout 600 -b :$PORT worker:app
+# Flexible Environment requires at least one instance running.
+# This ensures there's always a worker ready to accept a task.
+automatic_scaling:
+  min_num_instances: 1
+  max_num_instances: 1 # We can increase this later for higher throughput
 

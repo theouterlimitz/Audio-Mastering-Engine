@@ -1,18 +1,20 @@
 # default-service.yaml
-# The final, correct configuration for the STAGING frontend service.
+# Deploys the frontend service using the App Engine Flexible Environment,
+# matching the proven architecture of your production app.
 
-runtime: python312
+runtime: custom
+env: flex
 service: staging-default
-instance_class: F2
 
-# This tells App Engine to use its built-in, optimized server,
-# which is more reliable than a manual entrypoint for the Standard Environment.
-handlers:
-- url: /.*
-  script: auto
+# We can give the frontend fewer resources to save costs, as its only job
+# is to serve the web page and create tasks.
+resources:
+  cpu: 1
+  memory_gb: 0.5 # A smaller, cost-effective instance for the frontend
+  disk_size_gb: 10
 
-# This allows the instance to scale down to zero to save costs
-# when there are no users, which is ideal for a frontend.
+# Flexible Environment requires at least one instance running.
 automatic_scaling:
-  max_instances: 1
+  min_num_instances: 1
+  max_num_instances: 1
 
