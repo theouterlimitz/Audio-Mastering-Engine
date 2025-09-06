@@ -1,13 +1,2 @@
-# dispatch.yaml
-# The final, correct configuration for routing traffic to the STAGING services.
-
-dispatch:
-  # This rule sends all background task traffic to our STAGING worker.
-  - url: "*/process-task"
-    service: staging-worker # <-- CRITICAL FIX 1: Correct service name
-
-  # This rule sends all user-facing traffic to our STAGING frontend.
-  - url: "*/*"
-    service: staging-default # <-- CRITICAL FIX 2: Correct service name
+    dispatch: []
     
-
