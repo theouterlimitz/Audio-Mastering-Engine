@@ -1,1 +1,23 @@
-.gcloudignoreThis file tells the gcloud command-line tool which files to ignore when deploying.The .gcloudignore file itself should be ignored..gcloudignoreGit revision control directory..git/.gitignoreThe Dockerfile is used to build the container image on Google Cloud.DockerfilePython virtual environment directories.venv/env/Python bytecode and cache.*.pycpycache/IDE and editor configuration files..idea/.vscode/--- ADD THIS LINE ---Do not upload the service account key to the source repository.sa-key.json
+# .gcloudignore
+# A clean, safe, and correct configuration for a Python Flask App Engine project.
+
+# The .gcloudignore file itself should be ignored.
+.gcloudignore
+
+# Python specific ignores for cache and virtual environments
+__pycache__/
+*.pyc
+venv/
+env/
+
+# Source control and editor configuration files
+.git
+.gitignore
+.vscode/
+.idea/
+
+# --- CRITICAL SECURITY ---
+# Do not upload your service account key file to the server.
+# The App Engine environment has its own secure way to access permissions.
+sa-key.json
+
