@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Audio Mastering Suite</title>
+    <title>Audio Mastering Suite (Staging)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { font-family: 'Inter', sans-serif; }
@@ -20,7 +20,7 @@
 </head>
 <body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen py-12 px-4">
     <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
-        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite</h1>
+        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite (Staging)</h1>
         <p class="text-center text-gray-400 mb-8">Powered by Google App Engine</p>
 
         <form id="uploadForm" class="space-y-6">
@@ -103,14 +103,14 @@
                  </div>
             </div>
             
-              <!-- Multiband -->
+             <!-- Multiband -->
                <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
-                   <div class="flex items.center">
-                      <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
-                      <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
+                   <div class="flex items-center">
+                       <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
+                       <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
                    </div>
                    <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                        <!-- Low Band -->
+                       <!-- Low Band -->
                        <div>
                            <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
                            <div class="flex items-center space-x-3">
@@ -156,7 +156,7 @@
                            </div>
                        </div>
                    </div>
-            </div>
+               </div>
 
             <!-- Submit Button and Status -->
             <div>
@@ -181,7 +181,8 @@
         const resultsContainer = document.getElementById('resultsContainer');
         const artPromptInput = document.getElementById('artPrompt');
         
-        const API_BASE_URL = '';
+        // THIS IS THE FIX for "Failed to fetch"
+        const API_BASE_URL = 'https://staging-default-dot-audio-mastering-v2.ue.r.appspot.com';
 
         const sliders = [
             { id: 'analog_character', display: 'analog_characterValue', unit: ' %', fixed: 0 },
@@ -265,14 +266,14 @@
                 if (!uploadResponse.ok) throw new Error('File upload to cloud storage failed.');
                 
                 showStatus({ message: 'Starting processing job...' });
-                const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+                const startResponse = await fetch(`${API_BE_URL}/start-processing`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
                 });
                 if (!startResponse.ok) {
-                      const errorText = await startResponse.text();
-                      throw new Error(`Could not start processing job. Server says: ${errorText}`);
+                    const errorText = await startResponse.text();
+                    throw new Error(`Could not start processing job. Server says: ${errorText}`);
                 }
                 const { processed_filename, image_filename } = await startResponse.json();
                 
@@ -287,12 +288,9 @@
 
         function pollForStatus(audioFilename, imageFilename) {
             showStatus({ message: 'Processing in the cloud... (this may take several minutes)' });
-            
-            // --- RESILIENCY FIX ---
-            // Allow for a few failed attempts before giving up.
-            let maxRetries = 5;
-            let currentRetries = 0;
 
+            let errorCount = 0;
+            const maxErrors = 5; // Allow up to 5 consecutive errors before giving up
             const interval = setInterval(async () => {
                 try {
                     const queryParams = new URLSearchParams({
@@ -300,14 +298,14 @@
                         image_filename: imageFilename || '' 
                     });
                     const response = await fetch(`${API_BASE_URL}/status?${queryParams.toString()}`);
-
+                    
                     if (!response.ok) {
-                        // This is a server-side error, not a network error.
                         const errorText = await response.text();
                         throw new Error(`Status check failed with status: ${response.status}. Server says: ${errorText}`);
                     }
                     
                     const data = await response.json();
+                    errorCount = 0; // Reset error count on a successful poll
 
                     if (data.status === 'done') {
                         clearInterval(interval);
@@ -319,16 +317,14 @@
                         showStatus({ isError: true, message: `Error: ${data.message}` });
                         setProcessingState(false);
                     }
-                    // If status is 'processing', we reset the retry counter and continue.
-                    currentRetries = 0; 
+                    // If status is 'processing', do nothing and let the next poll run.
 
                 } catch (error) {
-                    // This catches network errors or fetch failures.
-                    console.warn(`Polling attempt failed: ${error.message}`);
-                    currentRetries++;
-                    if (currentRetries >= maxRetries) {
+                    errorCount++;
+                    console.warn(`Polling attempt ${errorCount}/${maxErrors} failed:`, error.message);
+                    if (errorCount >= maxErrors) {
                         clearInterval(interval);
-                        showStatus({ isError: true, message: 'Error: Could not check status.' });
+                        showStatus({ isError: true, message: 'Error: Could not check status. The connection was lost.' });
                         setProcessingState(false);
                     }
                 }
@@ -383,3 +379,4 @@
     </script>
 </body>
 </html>
+
