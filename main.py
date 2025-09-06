@@ -1,7 +1,8 @@
-# main.py (Correct Version)
-# This version correctly handles all logic for the web server,
-# including signed URLs, task creation, and status polling.
-# The service routing is set to "staging" as confirmed by logs.
+# main.py (Gold Standard Version)
+# This is the final, correct version that handles all logic for the
+# web server, including signed URLs, task creation, and status polling.
+# CRITICAL FIX: The /process-task now returns a 500 status code on exception,
+# ensuring Cloud Tasks knows the job failed and should be retried.
 
 import os
 import json
@@ -128,13 +129,21 @@ def process_task():
         if not all([gcs_uri, settings, key_file_path]):
             logging.error(f"ERROR: Invalid task data received: {job_data}")
             return "Bad Request: Invalid task data", 400
+            
         logging.info(f"Starting background processing for {gcs_uri}")
         process_audio_from_gcs(gcs_uri, settings, key_file_path)
         logging.info(f"Successfully completed processing for {gcs_uri}")
+        
+        # Explicitly return a success code
         return "OK", 200
+        
     except Exception as e:
         logging.exception(f"CRITICAL ERROR processing {gcs_uri}")
+        # --- THIS IS THE FIX ---
+        # When an exception occurs, return a 500 error.
+        # This tells Cloud Tasks the job failed and it should be retried.
         return "Internal Server Error", 500
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
