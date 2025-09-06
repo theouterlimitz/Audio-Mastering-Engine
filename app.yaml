@@ -1,18 +1,17 @@
 # This is the final, correct configuration for a long-running background task worker.
-# It uses a Backend instance type (B-class) and manual scaling to eliminate timeouts.
+# It uses a Backend instance class (B-class) and manual scaling to eliminate timeouts.
+# The B8 instance class provides sufficient memory (2048MB) to handle NumPy's usage.
 
 runtime: python311
 service: staging
 entrypoint: gunicorn -b :$PORT main:app
 
-# Use a Backend instance class, which is designed for long-running processes
-# and does not have the 60-second request timeout. A B4 instance provides
-# ample memory (1024MB) and CPU for audio processing.
-instance_class: B4
+# Use a B8 Backend instance class. This is critical for providing enough RAM (2048MB)
+# to prevent the Out-of-Memory Killer from terminating the process during
+# memory-intensive NumPy operations.
+instance_class: B8
 
-# Use manual scaling to ensure an instance is always ready to process tasks.
-# This also bypasses the short timeouts associated with automatic scaling.
-# 'instances: 1' is perfect for a staging/development queue.
+# Manual scaling ensures an instance is always ready and bypasses short timeouts.
 manual_scaling:
   instances: 1
 
