@@ -1,0 +1,56 @@
+autodetect: true
+createTime: '2025-09-06T23:22:58.467911762Z'
+github:
+  name: Audio-Mastering-Engine
+  owner: theouterlimitz
+  push:
+    branch: ^main$
+id: 0e8e3c97-5dfe-4461-9873-66335ee04906
+name: Default
+resourceName: projects/audio-mastering-v2/locations/global/triggers/0e8e3c97-5dfe-4461-9873-66335ee04906
+serviceAccount: projects/audio-mastering-v2/serviceAccounts/audio-mastering-v2@appspot.gserviceaccount.com
+# Existing content of your trigger...
+autodetect: true# Existing content of your trigger...
+autodetect: true
+createTime: '2025-09-06T23:22:58.467911762Z'
+github:
+  name: Audio-Mastering-Engine
+  owner: theouterlimitz
+  push:
+    branch: ^main$
+id: 0e8e3c97-5dfe-4461-9873-66335ee04906
+name: Default
+resourceName: projects/audio-mastering-v2/locations/global/triggers/0e8e3c97-5dfe-4461-9873-66335ee04906
+serviceAccount: projects/audio-mastering-v2/serviceAccounts/audio-mastering-v2@appspot.gserviceaccount.com
+build:
+  options:
+    logging: CLOUD_LOGGING_ONLYcreateTime: '2025-09-06T23:22:58.467911762Z'
+github:
+  name: Audio-Mastering-Engine
+  owner: theouterlimitz
+  push:
+    branch: ^main$
+id: 0e8e3c97-5dfe-4461-9873-66335ee04906
+name: Default
+resourceName: projects/audio-mastering-v2/locations/global/triggers/0e8e3c97-5dfe-4461-9873-66335ee04906
+serviceAccount: projects/audio-mastering-v2/serviceAccounts/audio-mastering-v2@appspot.gserviceaccount.com
+build:
+  options:
+    logging: CLOUD_LOGGING_ONLY
+```
+When you're done editing, save and close the file with `Ctrl + O`, `Enter`, and then `Ctrl + X`.
+
+### Step 3: Delete the Existing Trigger
+
+You have to delete the old trigger before you can re-create it with the same ID.
+
+```bash
+gcloud builds triggers delete 0e8e3c97-5dfe-4461-9873-66335ee04906 --region=global
+```
+
+### Step 4: Import the Updated Configuration
+
+Now, run this final command to import the modified configuration back into your project, creating a new trigger with the correct logging option.
+
+```bash
+gcloud builds triggers import --source=my-trigger.yaml --region=global
