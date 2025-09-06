@@ -1,11 +1,21 @@
 [
   {
     "origin": [
-      "https://audio-mastering-v2.ue.r.appspot.com",
-      "https://staging-dot-audio-mastering-v2.ue.r.appspot.com"
+      "https://staging-default-dot-audio-mastering-v2.ue.r.appspot.com",
+      "http://localhost:8080"
     ],
-    "method": ["PUT", "GET", "OPTIONS"],
-    "responseHeader": ["Content-Type", "Authorization", "X-Requested-With"],
+    "method": [
+      "PUT",
+      "GET",
+      "HEAD",
+      "OPTIONS"
+    ],
+    "responseHeader": [
+      "Content-Type",
+      "Access-Control-Allow-Origin",
+      "*"
+    ],
     "maxAgeSeconds": 3600
   }
 ]
+
