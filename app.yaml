@@ -1,17 +1,20 @@
 # This is the final, correct configuration for a long-running background task worker.
-# It uses a Backend instance class (B-class) and manual scaling to eliminate timeouts.
-# The B8 instance class provides sufficient memory (2048MB) to handle NumPy's usage.
+# It uses a Backend instance class (B8) and manual scaling to eliminate infrastructure timeouts.
+# The entrypoint now includes the --timeout 600 flag to prevent the Gunicorn
+# master process from killing long-running worker tasks.
 
 runtime: python311
 service: staging
-entrypoint: gunicorn -b :$PORT main:app
 
-# Use a B8 Backend instance class. This is critical for providing enough RAM (2048MB)
-# to prevent the Out-of-Memory Killer from terminating the process during
-# memory-intensive NumPy operations.
+# Add the --timeout 600 flag to the gunicorn command.
+# This gives each worker up to 10 minutes to complete a task,
+# solving the internal Gunicorn timeout issue.
+entrypoint: gunicorn --timeout 600 -b :$PORT main:app
+
+# A B8 instance provides enough RAM (2048MB) for audio processing.
 instance_class: B8
 
-# Manual scaling ensures an instance is always ready and bypasses short timeouts.
+# Manual scaling ensures an instance is always ready for tasks.
 manual_scaling:
   instances: 1
 
