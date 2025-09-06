@@ -181,7 +181,9 @@
         const resultsContainer = document.getElementById('resultsContainer');
         const artPromptInput = document.getElementById('artPrompt');
         
-        const API_BASE_URL = 'https://staging-default-dot-audio-mastering-v2.ue.r.appspot.com';
+        // THIS IS THE FINAL FIX for "Failed to fetch"
+        // By using a relative path, we ensure the browser never thinks this is a cross-origin request.
+        const API_BASE_URL = '';
 
         const sliders = [
             { id: 'analog_character', display: 'analog_characterValue', unit: ' %', fixed: 0 },
@@ -245,6 +247,7 @@
 
             try {
                 showStatus({ message: 'Requesting upload permission...' });
+                // The fetch URL is now relative, e.g., "/generate-upload-url"
                 const presignedResponse = await fetch(`${API_BASE_URL}/generate-upload-url`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -265,8 +268,6 @@
                 if (!uploadResponse.ok) throw new Error('File upload to cloud storage failed.');
                 
                 showStatus({ message: 'Starting processing job...' });
-                // *** THIS IS THE FIX ***
-                // Changed API_BE_URL to the correct API_BASE_URL
                 const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
