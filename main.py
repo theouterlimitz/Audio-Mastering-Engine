@@ -1,6 +1,7 @@
-# main.py (Gold Standard Version)
-# This is the final, correct version that handles all logic for the
-# web server, including signed URLs, task creation, and status polling.
+# main.py (Correct Version)
+# This version correctly handles all logic for the web server,
+# including signed URLs, task creation, and status polling.
+# The service routing is set to "staging" as confirmed by logs.
 
 import os
 import json
@@ -137,4 +138,3 @@ def process_task():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-

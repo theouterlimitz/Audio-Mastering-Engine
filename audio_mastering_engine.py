@@ -1,7 +1,6 @@
-# audio_mastering_engine.py (Final Architecture with Race Condition Fix)
-# This version adds a small time.sleep() delay after uploading the AI art
-# but before creating the .complete flag. This resolves a classic race condition
-# in distributed storage systems.
+# audio_mastering_engine.py (Corrected Version)
+# This version includes the critical fix for the NameError by ensuring
+# the 'input_blob' variable is defined before it is used.
 
 import os
 import tempfile
@@ -10,7 +9,7 @@ import subprocess
 import json
 import logging
 import psutil
-import time # <--- Import the time library
+import time
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
@@ -20,8 +19,6 @@ import traceback
 from google.cloud import storage
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
-
-# --- All code is the same until the very end of the main function ---
 
 logging.basicConfig(
     level=logging.INFO,
@@ -162,7 +159,7 @@ def generate_cover_art(prompt, audio_filename_base, bucket, gcp_project_id):
         gcp_location = 'us-east1'
         logging.info(f"Initializing Vertex AI for project '{gcp_project}' in '{gcp_location}'")
         if not gcp_project:
-             raise ValueError("GCP Project ID is missing, cannot initialize Vertex AI.")
+              raise ValueError("GCP Project ID is missing, cannot initialize Vertex AI.")
         vertexai.init(project=gcp_project, location=gcp_location)
         logging.info("Vertex AI initialized successfully.")
     except Exception:
@@ -203,7 +200,11 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     bucket_name, blob_name = gcs_uri[5:].split('/', 1)
     bucket = storage_client.bucket(bucket_name)
 
+    # --- THIS IS THE FIX ---
+    # This line was missing in the deployed code, causing the NameError.
+    # It correctly defines the 'input_blob' variable.
     input_blob = bucket.blob(blob_name)
+    # --- END FIX ---
 
     with tempfile.TemporaryDirectory() as base_temp_dir:
         temp_in_path = os.path.join(base_temp_dir, 'input.wav')
@@ -235,9 +236,6 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
             except Exception:
                 logging.error("Cover art generation failed, but mastering succeeded.")
         
-        # <<< THIS IS THE FIX >>>
-        # Give GCS a moment to ensure the image object is globally consistent
-        # before we tell the frontend that the job is done.
         logging.info("Waiting 2 seconds for GCS consistency...")
         time.sleep(2)
 
@@ -297,14 +295,14 @@ def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     return channel_samples
 
 def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, order=2):
-    if gain_db ==.0: return samples
+    if gain_db == 0.0: return samples
     gain = 10.0 ** (gain_db / 20.0)
     nyquist = 0.5 * sample_rate
     b, a = butter(order, cutoff_hz / nyquist, btype=filter_type)
     y = lfilter(b, a, samples)
     if gain_db > 0: return samples + (y - samples) * (gain - 1)
     else: return samples * gain + (y - samples * gain)
-        
+      
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
     nyquist = 0.5 * sample_rate
@@ -336,11 +334,3 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
-
-
-
-   
-    
-
-    
-
