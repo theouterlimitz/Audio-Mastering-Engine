@@ -1,6 +1,6 @@
-# main.py (Final AI Version with Project ID passing)
-# This version explicitly adds the GCP_PROJECT_ID to the settings payload,
-# ensuring the background worker knows which project to use for AI calls.
+# main.py (Gold Standard Version)
+# This is the final, correct version that handles all logic for the
+# web server, including signed URLs, task creation, and status polling.
 
 import os
 import json
@@ -61,8 +61,6 @@ def start_processing():
             return jsonify({"error": "Missing GCS URI or settings"}), 400
 
         data['key_file_path'] = KEY_FILE_PATH
-        
-        # <<< THIS IS THE FIX >>>
         data['settings']['gcp_project_id'] = GCP_PROJECT_ID
 
         parent = tasks_client.queue_path(GCP_PROJECT_ID, TASK_LOCATION, TASK_QUEUE)

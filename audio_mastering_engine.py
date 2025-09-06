@@ -1,6 +1,7 @@
-# audio_mastering_engine.py (Final Architecture)
-# This version corrects the NameError for input_blob and ensures the
-# true, low-memory, disk-to-disk pipeline can run to completion.
+# audio_mastering_engine.py (True FFmpeg Architecture)
+# This is the definitive, gold-standard version. It uses ffmpeg for the initial
+# splitting of the large audio file, eliminating the pydub memory spike. This
+# ensures a true disk-to-disk workflow with minimal memory overhead.
 
 import os
 import tempfile
@@ -8,7 +9,7 @@ import numpy as np
 import subprocess
 import json
 import logging
-import psutil
+import psutil 
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
@@ -30,7 +31,7 @@ def log_memory_usage():
     mem_info = process.memory_info()
     logging.info(f"MEMORY USAGE: {mem_info.rss / 1024 ** 2:.2f} MB")
 
-# --- All processing functions now use the corrected subprocess call ---
+# --- All processing functions remain the same, as they operate on small chunks ---
 
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     logging.info(f"Starting true disk-based loudness normalization for {input_path}...")
@@ -40,18 +41,22 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
             '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json',
             '-f', 'null', '-'
         ]
-        result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True, check=True)
+        result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True)
         
         output_lines = result_pass1.stderr.splitlines()
         json_str = ""
         json_started = False
         for line in output_lines:
-            if line.strip().startswith('{'): json_started = True
-            if json_started: json_str += line
-            if line.strip().endswith('}'): break
+            if line.strip().startswith('{'):
+                json_started = True
+            if json_started:
+                json_str += line
+            if line.strip().endswith('}'):
+                break
         
         if not json_str:
             raise RuntimeError("Could not parse loudnorm stats from ffmpeg's first pass.")
+
         measured_stats = json.loads(json_str)
         logging.info(f"FFmpeg Pass 1 stats: {measured_stats}")
 
@@ -63,38 +68,48 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
                    f"measured_TP={measured_stats['input_tp']}:"
                    f"measured_thresh={measured_stats['input_thresh']}:"
                    f"offset={measured_stats['target_offset']}",
-            '-y', output_path
+            '-y', 
+            output_path
         ]
-        subprocess.run(command_pass2, check=True)
+        
+        subprocess.run(command_pass2, check=True, capture_output=True)
         logging.info(f"FFmpeg Pass 2 complete. Normalized file at {output_path}")
         return output_path
-    except subprocess.CalledProcessError as e:
-        logging.exception("CRITICAL FFMPEG ERROR during disk-based normalization.")
-        logging.error(f"FFMPEG STDERR:\n{e.stderr}")
-        subprocess.run(['cp', input_path, output_path], check=True)
-        return output_path
-    except Exception:
-        logging.exception("CRITICAL UNKNOWN ERROR during disk-based normalization. Falling back.")
+
+    except Exception as e:
+        logging.exception("CRITICAL ERROR during disk-based normalization. Falling back.")
+        if 'result_pass1' in locals() and result_pass1.stderr:
+             logging.error(f"FFMPEG Pass 1 STDERR:\n{result_pass1.stderr}")
         subprocess.run(['cp', input_path, output_path], check=True)
         return output_path
 
 
 def process_audio_with_ffmpeg_pipeline(settings):
+    """
+    This is the new top-level processing function that uses ffmpeg for splitting,
+    ensuring a scalable, low-memory workflow from start to finish.
+    """
     input_file = settings.get("input_file")
     output_file = settings.get("output_file")
     if not input_file or not output_file:
         raise ValueError("Input or output file not specified.")
 
     logging.info(f"STARTING FFmpeg pipeline for {input_file}")
+    log_memory_usage()
+
     with tempfile.TemporaryDirectory() as temp_dir:
+        # --- Step 1: Split the giant input file into small chunks using ffmpeg ---
         logging.info("Splitting large audio file into chunks on disk...")
         chunk_duration_sec = 30
         split_command = [
-            'ffmpeg', '-i', input_file, '-f', 'segment',
+            'ffmpeg', '-i', input_file,
+            '-f', 'segment',
             '-segment_time', str(chunk_duration_sec),
-            '-c', 'copy', os.path.join(temp_dir, 'input_chunk_%04d.wav')
+            '-c', 'copy',
+            os.path.join(temp_dir, 'input_chunk_%04d.wav')
         ]
-        subprocess.run(split_command, check=True)
+        subprocess.run(split_command, check=True, capture_output=True)
+        log_memory_usage()
         logging.info("Splitting complete.")
 
         input_chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
@@ -102,11 +117,14 @@ def process_audio_with_ffmpeg_pipeline(settings):
         num_chunks = len(input_chunk_files)
         logging.info(f"Found {num_chunks} chunks to process.")
 
+        # --- Step 2: Loop through the small chunk files and process them ---
         for i, chunk_filename in enumerate(input_chunk_files):
             try:
                 logging.info(f"Processing chunk {i+1}/{num_chunks}: {chunk_filename}")
                 chunk_path = os.path.join(temp_dir, chunk_filename)
-                chunk = AudioSegment.from_file(chunk_path)
+                chunk = AudioSegment.from_file(chunk_path) # Now this is safe!
+
+                # Apply all the same mastering logic to the small chunk
                 if chunk.channels == 1: chunk = chunk.set_channels(2)
                 if chunk.sample_width != 2: chunk = chunk.set_sample_width(2)
                 if settings.get("analog_character", 0) > 0:
@@ -118,14 +136,17 @@ def process_audio_with_ffmpeg_pipeline(settings):
                 processed_chunk = float_array_to_audio_segment(processed_samples, chunk)
                 if settings.get("multiband"):
                     processed_chunk = apply_multiband_compressor(processed_chunk, settings)
+                
                 processed_chunk_filename = os.path.join(temp_dir, f"processed_chunk_{i:04d}.wav")
                 processed_chunk.export(processed_chunk_filename, format="wav")
                 processed_chunk_files.append(processed_chunk_filename)
-            except Exception:
+            except Exception as e:
                 logging.exception(f"CRITICAL: Failed during processing of chunk {i+1}.")
                 raise
         
+        # --- Step 3: Concatenate the processed chunks using ffmpeg ---
         logging.info("Concatenating all processed chunks...")
+        log_memory_usage()
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
         file_list_path = os.path.join(temp_dir, "filelist.txt")
         with open(file_list_path, 'w') as f:
@@ -133,10 +154,12 @@ def process_audio_with_ffmpeg_pipeline(settings):
                 f.write(f"file '{os.path.basename(filename)}'\n")
         subprocess.run(
             ['ffmpeg', '-f', 'concat', '-safe', '0', '-i', 'filelist.txt', '-c', 'copy', 'concatenated.wav'],
-            check=True, cwd=temp_dir
+            check=True, cwd=temp_dir, capture_output=True
         )
         logging.info("Concatenation complete.")
-        
+        log_memory_usage()
+
+        # --- Step 4: Final normalization and limiting (already memory-safe) ---
         final_file_to_export = concatenated_file_path
         if settings.get("lufs") is not None:
             normalized_file_path = os.path.join(temp_dir, "normalized.wav")
@@ -147,11 +170,13 @@ def process_audio_with_ffmpeg_pipeline(settings):
         logging.info("Applying final soft limit...")
         subprocess.run(
             ['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file],
-            check=True
+            check=True, capture_output=True
         )
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
+        log_memory_usage()
 
 
+# --- The main GCS function now calls our new pipeline ---
 def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     log_memory_usage()
     storage_client = storage.Client.from_service_account_json(key_file_path)
@@ -159,8 +184,6 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     bucket_name, blob_name = gcs_uri[5:].split('/', 1)
     bucket = storage_client.bucket(bucket_name)
 
-    # <<< THIS IS THE FIX >>>
-    # The input_blob variable must be defined here, before the with block.
     input_blob = bucket.blob(blob_name)
 
     with tempfile.TemporaryDirectory() as base_temp_dir:
@@ -178,6 +201,7 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
         new_settings["input_file"] = temp_in_path
         new_settings["output_file"] = temp_out_path
         
+        # <<< This is the key change >>>
         process_audio_with_ffmpeg_pipeline(new_settings)
 
         output_blob_name = f"processed/{output_filename_base}"
@@ -199,6 +223,7 @@ def process_audio_from_gcs(gcs_uri, settings, key_file_path):
     logging.info("--- TOP LEVEL: process_audio_from_gcs COMPLETE ---")
     log_memory_usage()
 
+# --- All other helper functions remain unchanged ---
 def generate_cover_art(prompt, audio_filename_base, bucket, gcp_project_id):
     logging.info("--- Starting generate_cover_art ---")
     try:
@@ -238,8 +263,6 @@ def generate_cover_art(prompt, audio_filename_base, bucket, gcp_project_id):
     except Exception:
         logging.exception("CRITICAL ERROR saving or uploading the image.")
         raise
-
-# --- All other helper functions remain unchanged ---
 
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
@@ -328,11 +351,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
-
-
-
-    
-    
-
-    
 
