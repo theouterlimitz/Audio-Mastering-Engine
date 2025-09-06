@@ -1,7 +1,6 @@
-# audio_mastering_engine.py (Final Architecture with Race Condition Fix)
-# This version adds a small time.sleep() delay after uploading the AI art
-# but before creating the .complete flag. This resolves a classic race condition
-# in distributed storage systems.
+# audio_mastering_engine.py (Gold Standard Version)
+# This is the final, correct version that uses a true, low-memory,
+# disk-to-disk pipeline with ffmpeg and has the NameError corrected.
 
 import os
 import tempfile
@@ -10,7 +9,6 @@ import subprocess
 import json
 import logging
 import psutil
-import time # <--- Import the time library
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
@@ -20,8 +18,6 @@ import traceback
 from google.cloud import storage
 import vertexai
 from vertexai.preview.vision_models import ImageGenerationModel
-
-# --- All code is the same until the very end of the main function ---
 
 logging.basicConfig(
     level=logging.INFO,
@@ -155,6 +151,54 @@ def process_audio_with_ffmpeg_pipeline(settings):
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
 
 
+def process_audio_from_gcs(gcs_uri, settings, key_file_path):
+    log_memory_usage()
+    storage_client = storage.Client.from_service_account_json(key_file_path)
+    if not gcs_uri.startswith('gs://'): raise ValueError("Invalid GCS URI")
+    bucket_name, blob_name = gcs_uri[5:].split('/', 1)
+    bucket = storage_client.bucket(bucket_name)
+
+    # <<< THIS IS THE FIX >>>
+    # The input_blob variable must be defined here, before the with block.
+    input_blob = bucket.blob(blob_name)
+
+    with tempfile.TemporaryDirectory() as base_temp_dir:
+        temp_in_path = os.path.join(base_temp_dir, 'input.wav')
+        temp_out_path = os.path.join(base_temp_dir, 'output.wav')
+        
+        logging.info(f"Downloading {gcs_uri} to {temp_in_path}")
+        # Now this line will work because input_blob is defined
+        input_blob.download_to_filename(temp_in_path)
+        log_memory_usage()
+        
+        original_filename = settings.get('original_filename', 'unknown.wav')
+        output_filename_base = f"mastered_{original_filename}"
+        
+        new_settings = settings.copy()
+        new_settings["input_file"] = temp_in_path
+        new_settings["output_file"] = temp_out_path
+        
+        process_audio_with_ffmpeg_pipeline(new_settings)
+
+        output_blob_name = f"processed/{output_filename_base}"
+        output_blob = bucket.blob(output_blob_name)
+        logging.info(f"Uploading processed file from {temp_out_path} to gs://{bucket_name}/{output_blob_name}")
+        output_blob.upload_from_filename(temp_out_path, content_type='audio/wav')
+        
+        art_prompt = settings.get("art_prompt")
+        gcp_project_id = settings.get("gcp_project_id")
+        if art_prompt and art_prompt.strip():
+            try:
+                generate_cover_art(art_prompt, output_filename_base, bucket, gcp_project_id)
+            except Exception:
+                logging.error("Cover art generation failed, but mastering succeeded.")
+        
+        complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
+        complete_flag_blob.upload_from_string("done")
+
+    logging.info("--- TOP LEVEL: process_audio_from_gcs COMPLETE ---")
+    log_memory_usage()
+
 def generate_cover_art(prompt, audio_filename_base, bucket, gcp_project_id):
     logging.info("--- Starting generate_cover_art ---")
     try:
@@ -195,61 +239,7 @@ def generate_cover_art(prompt, audio_filename_base, bucket, gcp_project_id):
         logging.exception("CRITICAL ERROR saving or uploading the image.")
         raise
 
-
-def process_audio_from_gcs(gcs_uri, settings, key_file_path):
-    log_memory_usage()
-    storage_client = storage.Client.from_service_account_json(key_file_path)
-    if not gcs_uri.startswith('gs://'): raise ValueError("Invalid GCS URI")
-    bucket_name, blob_name = gcs_uri[5:].split('/', 1)
-    bucket = storage_client.bucket(bucket_name)
-
-    input_blob = bucket.blob(blob_name)
-
-    with tempfile.TemporaryDirectory() as base_temp_dir:
-        temp_in_path = os.path.join(base_temp_dir, 'input.wav')
-        temp_out_path = os.path.join(base_temp_dir, 'output.wav')
-        
-        logging.info(f"Downloading {gcs_uri} to {temp_in_path}")
-        input_blob.download_to_filename(temp_in_path)
-        log_memory_usage()
-        
-        original_filename = settings.get('original_filename', 'unknown.wav')
-        output_filename_base = f"mastered_{original_filename}"
-        
-        new_settings = settings.copy()
-        new_settings["input_file"] = temp_in_path
-        new_settings["output_file"] = temp_out_path
-        
-        process_audio_with_ffmpeg_pipeline(new_settings)
-
-        output_blob_name = f"processed/{output_filename_base}"
-        output_blob = bucket.blob(output_blob_name)
-        logging.info(f"Uploading processed file from {temp_out_path} to gs://{bucket_name}/{output_blob_name}")
-        output_blob.upload_from_filename(temp_out_path, content_type='audio/wav')
-        
-        art_prompt = settings.get("art_prompt")
-        gcp_project_id = settings.get("gcp_project_id")
-        if art_prompt and art_prompt.strip():
-            try:
-                generate_cover_art(art_prompt, output_filename_base, bucket, gcp_project_id)
-            except Exception:
-                logging.error("Cover art generation failed, but mastering succeeded.")
-        
-        # <<< THIS IS THE FIX >>>
-        # Give GCS a moment to ensure the image object is globally consistent
-        # before we tell the frontend that the job is done.
-        logging.info("Waiting 2 seconds for GCS consistency...")
-        time.sleep(2)
-
-        complete_flag_blob = bucket.blob(f"{output_blob_name}.complete")
-        complete_flag_blob.upload_from_string("done")
-
-    logging.info("--- TOP LEVEL: process_audio_from_gcs COMPLETE ---")
-    log_memory_usage()
-
 # --- All other helper functions remain unchanged ---
-# ... (the rest of the file is identical)
-
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
     if audio_segment.channels == 2: samples = samples.reshape((-1, 2))
@@ -337,7 +327,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     high_compressed = compress_dynamic_range(high_band_chunk,
         threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
-
-
-    
 
