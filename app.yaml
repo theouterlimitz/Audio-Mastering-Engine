@@ -1,20 +1,19 @@
 # This file configures your Google App Engine service.
-# It includes the F2 instance class, the Gunicorn entrypoint,
-# and the crucial timeout setting to allow for long-running tasks.
+# It uses 'basic_scaling' which is the correct way to handle
+# long-running background tasks in modern App Engine environments.
 
 runtime: python311
 instance_class: F2
 service: staging
 entrypoint: gunicorn -b :$PORT main:app
 
-automatic_scaling:
-  min_instances: 0
+# --- THIS IS THE FIX ---
+# Switch from 'automatic_scaling' to 'basic_scaling'.
+# This allows for longer-running instances that are ideal for
+# background processing jobs like audio mastering.
+basic_scaling:
+  # Sets the instance to shut down after 15 minutes of inactivity.
+  idle_timeout: 15m
+  # Specifies the maximum number of instances to create.
   max_instances: 2
-  
-  # --- THIS IS THE FIX ---
-  # By default, App Engine stops any request that takes longer
-  # than 60 seconds. This setting increases that deadline to the
-  # maximum of 10 minutes (600 seconds), giving your audio
-  # processing enough time to complete.
-  request_timeout: 600s
 
