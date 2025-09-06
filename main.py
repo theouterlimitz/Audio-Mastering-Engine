@@ -1,5 +1,5 @@
 # main.py
-# This is the complete, final code for the lightweight frontend service.
+# This is the final, production-ready code for the frontend service.
 
 import os
 import json
@@ -12,19 +12,22 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
+# --- THIS IS THE ROBUST AUTH FIX ---
+# Construct an absolute path to the key file. This is more reliable and
+# ensures the application can find its credentials on startup, fixing the 502 error.
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+KEY_FILE_PATH = os.path.join(BASE_DIR, "sa-key.json")
+# --- END OF FIX ---
+
 # --- Configuration ---
 GCP_PROJECT_ID = os.environ.get('GCP_PROJECT')
 BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
 TASK_LOCATION = 'us-east1'
-KEY_FILE_PATH = "sa-key.json" # The path to your service account key
 
-# --- THIS IS THE FIX ---
-# Initialize Google Cloud clients using the service account key.
-# This provides the necessary private key to sign credentials for secure URLs.
+# Initialize Google Cloud clients using the absolute path to the service account key.
 storage_client = storage.Client.from_service_account_json(KEY_FILE_PATH)
 tasks_client = tasks_v2.CloudTasksClient.from_service_account_json(KEY_FILE_PATH)
-# --- END OF FIX ---
 
 
 @app.route('/')
@@ -53,7 +56,7 @@ def generate_upload_url():
         gcs_uri = f"gs://{BUCKET_NAME}/raw_uploads/{data['filename']}"
         return jsonify({"url": url, "gcs_uri": gcs_uri}), 200
     except Exception as e:
-        return jsonify({"error": f"Backend Error: {str(e)}"}), 500
+        return jsonify({"error": f"Backend Error in generate-upload-url: {str(e)}"}), 500
 
 
 @app.route('/start-processing', methods=['POST'])
@@ -69,7 +72,8 @@ def start_processing():
         task_payload = {
             'gcs_uri': data['gcs_uri'],
             'settings': data['settings'],
-            'key_file_path': KEY_FILE_PATH # Pass the key path to the worker
+            # The worker will construct its own absolute path to the key file.
+            'key_file_path': "sa-key.json"
         }
         
         task = {
@@ -78,9 +82,7 @@ def start_processing():
                 "relative_uri": "/process-task",
                 "headers": {"Content-type": "application/json"},
                 "body": json.dumps(task_payload).encode(),
-                "app_engine_routing": {
-                    "service": "staging-worker" 
-                }
+                "app_engine_routing": {"service": "staging-worker"}
             },
             'dispatch_deadline': {'seconds': 3600 * 2 }
         }
@@ -100,45 +102,49 @@ def start_processing():
         }), 200
 
     except Exception as e:
-        return jsonify({"error": f"Backend Error: {str(e)}"}), 500
+        return jsonify({"error": f"Backend Error in start-processing: {str(e)}"}), 500
 
 
 @app.route('/status', methods=['GET'])
 def get_status():
     """Allows the frontend to poll for the status of the processing job."""
-    audio_filename = request.args.get('audio_filename')
-    image_filename = request.args.get('image_filename')
-    
-    if not audio_filename:
-        return jsonify({"error": "Audio filename parameter is required"}), 400
+    try:
+        audio_filename = request.args.get('audio_filename')
+        image_filename = request.args.get('image_filename')
+        
+        if not audio_filename:
+            return jsonify({"error": "Audio filename parameter is required"}), 400
 
-    bucket = storage_client.bucket(BUCKET_NAME)
-    
-    complete_flag_blob = bucket.blob(f"{audio_filename}.complete")
-    
-    if not complete_flag_blob.exists():
-        return jsonify({"status": "processing"}), 200
+        bucket = storage_client.bucket(BUCKET_NAME)
+        
+        complete_flag_blob = bucket.blob(f"{audio_filename}.complete")
+        
+        if not complete_flag_blob.exists():
+            return jsonify({"status": "processing"}), 200
 
-    audio_blob = bucket.blob(audio_filename)
-    if not audio_blob.exists():
-        return jsonify({"status": "error", "message": "Processing complete but output audio file is missing."}), 500
+        audio_blob = bucket.blob(audio_filename)
+        if not audio_blob.exists():
+            return jsonify({"status": "error", "message": "Processing complete but output audio file is missing."}), 500
 
-    response_data = {"status": "done"}
-    
-    response_data['download_url'] = audio_blob.generate_signed_url(
-        version="v4", expiration=datetime.timedelta(minutes=60)
-    )
-    
-    if image_filename and image_filename != 'null' and image_filename != '':
-        image_blob = bucket.blob(image_filename)
-        if image_blob.exists():
-            response_data['art_url'] = image_blob.generate_signed_url(
-                version="v4", expiration=datetime.timedelta(minutes=60)
-            )
-            
-    return jsonify(response_data), 200
+        response_data = {"status": "done"}
+        
+        response_data['download_url'] = audio_blob.generate_signed_url(
+            version="v4", expiration=datetime.timedelta(minutes=60)
+        )
+        
+        if image_filename and image_filename != 'null' and image_filename != '':
+            image_blob = bucket.blob(image_filename)
+            if image_blob.exists():
+                response_data['art_url'] = image_blob.generate_signed_url(
+                    version="v4", expiration=datetime.timedelta(minutes=60)
+                )
+                
+        return jsonify(response_data), 200
+    except Exception as e:
+        return jsonify({"error": f"Backend Error in status check: {str(e)}"}), 500
 
 
 if __name__ == '__main__':
+    # This block is for local development only and is ignored by Google App Engine.
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
