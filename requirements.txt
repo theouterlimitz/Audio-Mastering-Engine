@@ -1,4 +1,5 @@
 Flask==3.0.0
+Flask-Cors==4.0.1 
 gunicorn==21.2.0
 numpy==1.26.4
 pydub==0.25.1
