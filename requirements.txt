@@ -1,7 +1,19 @@
-psutil
+# Core Audio & DSP Libraries
 pydub
-scipy
 numpy
+scipy
+psutil # For memory logging
+
+# GUI Libraries
 ttkthemes
-Pillow
+Pillow # For displaying images in the GUI
+
+# AI Tagger & ML Libraries
+tensorflow
+librosa
+scikit-learn
+joblib
+
+# Google Cloud Libraries (for Art Generation)
 google-cloud-aiplatform
+google-auth
