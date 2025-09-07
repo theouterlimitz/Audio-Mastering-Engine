@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Mastering Suite (Staging)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .slider-thumb::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 16px; height: 16px;
+            background: #4F46E5; cursor: pointer;
+            border-radius: 50%;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-gray-200 flex items-center justify-center min-h-screen py-12 px-4">
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl border border-gray-700">
+        <h1 class="text-3xl font-bold text-center mb-2 text-white">Audio Mastering Suite (Staging)</h1>
+        <p class="text-center text-gray-400 mb-8">Powered by Google App Engine</p>
+
+        <form id="uploadForm" class="space-y-6">
+            <!-- File Selection -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <div class="flex items-center space-x-4">
+                    <label for="fileInput" class="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-md transition-colors duration-300">
+                        Choose File
+                    </label>
+                    <input type="file" id="fileInput" class="hidden" accept="audio/*">
+                    <span id="fileName" class="text-gray-400 truncate">No file selected</span>
+                </div>
+            </div>
+
+            <!-- AI Art Prompt -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                <label for="artPrompt" class="block text-sm font-medium text-gray-300 mb-2">AI Cover Art Prompt (Optional)</label>
+                <textarea id="artPrompt" rows="3" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 text-gray-200 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., A vibrant synthwave sunset over a retro cityscape"></textarea>
+            </div>
+            
+            <!-- Parameters -->
+            <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                      <!-- Analog Character -->
+                      <div>
+                          <label for="analog_character" class="block text-sm font-medium text-gray-300">Analog Character (%)</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="0" max="100" value="0" step="1" id="analog_character" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="analog_characterValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0 %</span>
+                          </div>
+                      </div>
+                      <!-- Bass -->
+                      <div>
+                          <label for="bass_boost" class="block text-sm font-medium text-gray-300">Bass (dB)</label>
+                          <div class="flex items-center space-x-3">
+                              <input type="range" min="-6" max="6" value="0" step="0.5" id="bass_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="bass_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                          </div>
+                      </div>
+                      <!-- Mid Cut -->
+                      <div>
+                          <label for="mid_cut" class="block text-sm font-medium text-gray-300">Mid Cut (dB)</label>
+                           <div class="flex items-center space-x-3">
+                              <input type="range" min="0" max="6" value="0" step="0.5" id="mid_cut" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="mid_cutValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                          </div>
+                      </div>
+                       <!-- Presence -->
+                      <div>
+                          <label for="presence_boost" class="block text-sm font-medium text-gray-300">Presence (dB)</label>
+                           <div class="flex items-center space-x-3">
+                              <input type="range" min="-6" max="6" value="0" step="0.5" id="presence_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="presence_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                          </div>
+                      </div>
+                          <!-- Treble -->
+                      <div>
+                          <label for="treble_boost" class="block text-sm font-medium text-gray-300">Treble (dB)</label>
+                           <div class="flex items-center space-x-3">
+                              <input type="range" min="-6" max="6" value="0" step="0.5" id="treble_boost" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="treble_boostValue" class="text-sm font-mono text-indigo-300 w-12 text-right">0.0 dB</span>
+                          </div>
+                      </div>
+                          <!-- Stereo Width -->
+                      <div>
+                          <label for="width" class="block text-sm font-medium text-gray-300">Stereo Width</label>
+                           <div class="flex items-center space-x-3">
+                              <input type="range" min="0" max="2" value="1" step="0.05" id="width" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="widthValue" class="text-sm font-mono text-indigo-300 w-12 text-right">1.00 x</span>
+                          </div>
+                      </div>
+                          <!-- Target LUFS -->
+                      <div class="md:col-span-2">
+                           <label for="lufs" class="block text-sm font-medium text-gray-300">Target LUFS</label>
+                           <div class="flex items-center space-x-3">
+                              <input type="range" min="-20" max="-6" value="-14" step="0.5" id="lufs" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                              <span id="lufsValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-14.0 LUFS</span>
+                          </div>
+                      </div>
+                 </div>
+            </div>
+            
+             <!-- Multiband -->
+               <div class="bg-gray-900 p-4 rounded-lg border border-gray-700">
+                   <div class="flex items-center">
+                       <input id="useMultiband" type="checkbox" class="h-4 w-4 rounded border-gray-600 text-indigo-600 focus:ring-indigo-500 bg-gray-800">
+                       <label for="useMultiband" class="ml-3 block text-sm font-medium text-gray-300">Use Multiband Compressor</label>
+                   </div>
+                   <div id="multibandControls" class="hidden mt-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                       <!-- Low Band -->
+                       <div>
+                           <label for="low_thresh" class="block text-sm font-medium text-gray-300">Low Thresh (dB)</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="-40" max="0" value="-25" step="1" id="low_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="low_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-25.0 dB</span>
+                           </div>
+                       </div>
+                       <div>
+                           <label for="low_ratio" class="block text-sm font-medium text-gray-300">Low Ratio</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="1" max="10" value="6" step="0.5" id="low_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="low_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">6.0 :1</span>
+                           </div>
+                       </div>
+                       <!-- Mid Band -->
+                       <div>
+                           <label for="mid_thresh" class="block text-sm font-medium text-gray-300">Mid Thresh (dB)</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="-40" max="0" value="-20" step="1" id="mid_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="mid_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-20.0 dB</span>
+                           </div>
+                       </div>
+                       <div>
+                           <label for="mid_ratio" class="block text-sm font-medium text-gray-300">Mid Ratio</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="1" max="10" value="3" step="0.5" id="mid_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="mid_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">3.0 :1</span>
+                           </div>
+                       </div>
+                       <!-- High Band -->
+                       <div>
+                           <label for="high_thresh" class="block text-sm font-medium text-gray-300">High Thresh (dB)</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="-40" max="0" value="-15" step="1" id="high_thresh" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="high_threshValue" class="text-sm font-mono text-indigo-300 w-12 text-right">-15.0 dB</span>
+                           </div>
+                       </div>
+                       <div>
+                           <label for="high_ratio" class="block text-sm font-medium text-gray-300">High Ratio</label>
+                           <div class="flex items-center space-x-3">
+                               <input type="range" min="1" max="10" value="4" step="0.5" id="high_ratio" class="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer slider-thumb">
+                               <span id="high_ratioValue" class="text-sm font-mono text-indigo-300 w-12 text-right">4.0 :1</span>
+                           </div>
+                       </div>
+                   </div>
+               </div>
+
+            <!-- Submit Button and Status -->
+            <div>
+                <button type="submit" id="submitButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 flex items-center justify-center">
+                    Upload & Process
+                </button>
+                <div id="status" class="mt-4 text-center text-gray-400 h-auto min-h-[1.5rem]"></div>
+                
+                <div id="resultsContainer" class="mt-4 text-center space-y-4"></div>
+            </div>
+        </form>
+    </div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileName');
+        const statusDisplay = document.getElementById('status');
+        const submitButton = document.getElementById('submitButton');
+        const useMultibandCheckbox = document.getElementById('useMultiband');
+        const multibandControls = document.getElementById('multibandControls');
+        const resultsContainer = document.getElementById('resultsContainer');
+        const artPromptInput = document.getElementById('artPrompt');
+        
+        // THIS IS THE FINAL FIX for "Failed to fetch"
+        // By using a relative path, we ensure the browser never thinks this is a cross-origin request.
+        const API_BASE_URL = '';
+
+        const sliders = [
+            { id: 'analog_character', display: 'analog_characterValue', unit: ' %', fixed: 0 },
+            { id: 'bass_boost', display: 'bass_boostValue', unit: ' dB', fixed: 1 },
+            { id: 'mid_cut', display: 'mid_cutValue', unit: ' dB', fixed: 1 },
+            { id: 'presence_boost', display: 'presence_boostValue', unit: ' dB', fixed: 1 },
+            { id: 'treble_boost', display: 'treble_boostValue', unit: ' dB', fixed: 1 },
+            { id: 'width', display: 'widthValue', unit: ' x', fixed: 2 },
+            { id: 'lufs', display: 'lufsValue', unit: ' LUFS', fixed: 1 },
+            { id: 'low_thresh', display: 'low_threshValue', unit: ' dB', fixed: 1 },
+            { id: 'low_ratio', display: 'low_ratioValue', unit: ' :1', fixed: 1 },
+            { id: 'mid_thresh', display: 'mid_threshValue', unit: ' dB', fixed: 1 },
+            { id: 'mid_ratio', display: 'mid_ratioValue', unit: ' :1', fixed: 1 },
+            { id: 'high_thresh', display: 'high_threshValue', unit: ' dB', fixed: 1 },
+            { id: 'high_ratio', display: 'high_ratioValue', unit: ' :1', fixed: 1 }
+        ];
+
+        sliders.forEach(slider => {
+            const input = document.getElementById(slider.id);
+            const display = document.getElementById(slider.display);
+            if (input && display) {
+                input.addEventListener('input', () => {
+                    let value = parseFloat(input.value).toFixed(slider.fixed);
+                    display.textContent = `${value}${slider.unit}`;
+                });
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            fileNameDisplay.textContent = fileInput.files[0] ? fileInput.files[0].name : 'No file selected';
+        });
+        
+        useMultibandCheckbox.addEventListener('change', () => {
+            multibandControls.classList.toggle('hidden');
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const file = fileInput.files[0];
+            if (!file) {
+                showStatus({ isError: true, message: 'Please select a file.' });
+                return;
+            }
+
+            setProcessingState(true);
+
+            const settings = {};
+            sliders.forEach(slider => {
+                const element = document.getElementById(slider.id);
+                if(element) settings[slider.id] = parseFloat(element.value);
+            });
+            settings.multiband = useMultibandCheckbox.checked;
+            settings.original_filename = file.name;
+            
+            const artPromptValue = artPromptInput.value.trim();
+            if (artPromptValue) {
+                settings.art_prompt = artPromptValue;
+            }
+            
+            console.log("Submitting settings:", settings);
+
+            try {
+                showStatus({ message: 'Requesting upload permission...' });
+                // The fetch URL is now relative, e.g., "/generate-upload-url"
+                const presignedResponse = await fetch(`${API_BASE_URL}/generate-upload-url`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename: file.name, contentType: file.type })
+                });
+                if (!presignedResponse.ok) {
+                    const errorText = await presignedResponse.text();
+                    throw new Error(`Could not get upload URL (status: ${presignedResponse.status}). Server says: ${errorText}`);
+                }
+                const { url, gcs_uri } = await presignedResponse.json();
+
+                showStatus({ message: 'Uploading file...' });
+                const uploadResponse = await fetch(url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': file.type },
+                    body: file
+                });
+                if (!uploadResponse.ok) throw new Error('File upload to cloud storage failed.');
+                
+                showStatus({ message: 'Starting processing job...' });
+                const startResponse = await fetch(`${API_BASE_URL}/start-processing`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gcs_uri: gcs_uri, settings: settings })
+                });
+                if (!startResponse.ok) {
+                    const errorText = await startResponse.text();
+                    throw new Error(`Could not start processing job. Server says: ${errorText}`);
+                }
+                const { processed_filename, image_filename } = await startResponse.json();
+                
+                pollForStatus(processed_filename, image_filename || null);
+
+            } catch (error) {
+                console.error('Upload process failed:', error);
+                showStatus({ isError: true, message: `Error: ${error.message}` });
+                setProcessingState(false);
+            }
+        });
+
+        function pollForStatus(audioFilename, imageFilename) {
+            showStatus({ message: 'Processing in the cloud... (this may take several minutes)' });
+
+            let errorCount = 0;
+            const maxErrors = 5; // Allow up to 5 consecutive errors before giving up
+            const interval = setInterval(async () => {
+                try {
+                    const queryParams = new URLSearchParams({
+                        audio_filename: audioFilename,
+                        image_filename: imageFilename || '' 
+                    });
+                    const response = await fetch(`${API_BASE_URL}/status?${queryParams.toString()}`);
+                    
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`Status check failed with status: ${response.status}. Server says: ${errorText}`);
+                    }
+                    
+                    const data = await response.json();
+                    errorCount = 0; // Reset error count on a successful poll
+
+                    if (data.status === 'done') {
+                        clearInterval(interval);
+                        showStatus({ message: 'Processing complete!' });
+                        setProcessingState(false);
+                        showResults(data);
+                    } else if (data.status === 'error') {
+                        clearInterval(interval);
+                        showStatus({ isError: true, message: `Error: ${data.message}` });
+                        setProcessingState(false);
+                    }
+                    // If status is 'processing', do nothing and let the next poll run.
+
+                } catch (error) {
+                    errorCount++;
+                    console.warn(`Polling attempt ${errorCount}/${maxErrors} failed:`, error.message);
+                    if (errorCount >= maxErrors) {
+                        clearInterval(interval);
+                        showStatus({ isError: true, message: 'Error: Could not check status. The connection was lost.' });
+                        setProcessingState(false);
+                    }
+                }
+            }, 10000); 
+        }
+
+        function showStatus({ isError = false, message = '' }) {
+            statusDisplay.textContent = message;
+            statusDisplay.style.color = isError ? '#F87171' : '#9ca3af';
+        }
+
+        function setProcessingState(isProcessing) {
+            submitButton.disabled = isProcessing;
+            const elementsToDisable = document.querySelectorAll('input, button, textarea');
+            elementsToDisable.forEach(el => {
+                el.disabled = isProcessing;
+            });
+
+            if (isProcessing) {
+                submitButton.textContent = 'Processing...';
+                submitButton.classList.remove('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.add('bg-gray-600', 'cursor-not-allowed');
+                resultsContainer.innerHTML = '';
+            } else {
+                submitButton.textContent = "Upload & Process";
+                submitButton.classList.add('bg-green-600', 'hover:bg-green-700');
+                submitButton.classList.remove('bg-gray-600', 'cursor-not-allowed');
+            }
+        }
+        
+        function showResults(data) {
+            resultsContainer.innerHTML = ''; 
+
+            if (data.art_url) {
+                const img = document.createElement('img');
+                img.src = data.art_url;
+                img.alt = "Generated AI Cover Art";
+                img.className = "w-full max-w-sm mx-auto rounded-lg shadow-lg";
+                resultsContainer.appendChild(img);
+            }
+
+            if (data.download_url) {
+                const link = document.createElement('a');
+                link.href = data.download_url;
+                link.target = "_blank";
+                link.rel = "noopener noreferrer";
+                link.className = "w-full inline-block bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-md text-lg transition-colors duration-300 mt-4";
+                link.textContent = "Download Mastered File";
+                resultsContainer.appendChild(link);
+            }
+        }
+    </script>
+</body>
+</html>
+
