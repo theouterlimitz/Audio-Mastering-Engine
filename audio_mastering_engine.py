@@ -1,6 +1,6 @@
-# audio_mastering_engine.py (v3.4 - Final Local Version with Concat Filter Fix)
-# This version replaces the fragile `concat` demuxer with the far more robust
-# `concat` filter. This is the definitive fix for the concatenation errors.
+# audio_mastering_engine.py (v3.7 - Final Local Version with Model Fix)
+# This version fixes the 404 error during prompt generation by switching
+# to a newer, more widely available Gemini model.
 
 import os
 import tempfile
@@ -20,25 +20,50 @@ try:
     import google.auth
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
+    from vertexai.generative_models import GenerativeModel
 except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
     google, vertexai = None, None
 
+import ai_tagger
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
-def process_audio(settings, status_callback, progress_callback, art_callback):
+def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
-    Main entry point for the GUI. Wraps the pipeline for threading and callbacks.
+    Main entry point for the GUI. Now orchestrates the full AI pipeline.
     """
     try:
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
+        status_callback("Mastering complete. Preparing for AI analysis...")
         
-        art_prompt = settings.get("art_prompt", "").strip()
-        if art_prompt and vertexai:
-            status_callback("Mastering complete. Starting AI art generation...")
+        auto_generate = settings.get("auto_generate_prompt", False)
+        manual_prompt = settings.get("art_prompt", "").strip()
+        final_art_prompt = None
+
+        if auto_generate:
+            status_callback("Analyzing audio for mood...")
+            input_file = settings.get("input_file")
+            mood = ai_tagger.predict_mood(input_file)
+            tag_callback(mood)
+
+            if "Error" in mood:
+                status_callback(f"Failed: Could not analyze mood. {mood}")
+                final_art_prompt = None
+            else:
+                status_callback(f"Mood detected: {mood}. Brainstorming creative prompt...")
+                final_art_prompt = generate_creative_prompt(mood)
+                tag_callback(f"{mood} -> \"{final_art_prompt}\"")
+        
+        elif manual_prompt:
+            final_art_prompt = manual_prompt
+            tag_callback("Using manual prompt.")
+
+        if final_art_prompt and vertexai:
+            status_callback("Starting AI art generation...")
             try:
                 output_file = settings.get("output_file")
-                art_file_path = generate_cover_art_locally(art_prompt, output_file)
+                art_file_path = generate_cover_art_locally(final_art_prompt, output_file)
                 status_callback("Success: AI art generation complete!")
                 art_callback(art_file_path)
             except Exception as art_error:
@@ -46,7 +71,7 @@ def process_audio(settings, status_callback, progress_callback, art_callback):
                 status_callback(f"Failed: Mastering complete, but AI art failed.")
                 art_callback(None)
         else:
-            status_callback("Success: Processing complete!")
+            status_callback("Success: Processing complete! (No art generated)")
             art_callback(None)
             
     except Exception as e:
@@ -55,6 +80,36 @@ def process_audio(settings, status_callback, progress_callback, art_callback):
         status_callback(f"Error: {e}")
         progress_callback(0, 1)
         art_callback(None)
+        tag_callback("Processing failed.")
+
+
+def generate_creative_prompt(mood):
+    if not vertexai: raise RuntimeError("Vertex AI library is not available.")
+    logging.info(f"Brainstorming creative prompt for mood: {mood}")
+    try:
+        # --- THIS IS THE FIX ---
+        # Switched to a newer, more available model to fix the 404 error.
+        model = GenerativeModel("gemini-1.5-flash-preview-0514")
+        
+        meta_prompt = f"""
+        You are an expert creative art director for album covers. Your task is to brainstorm a short, evocative, and highly artistic image prompt for an AI image generator. The prompt should capture the essence of a song with the following mood: '{mood}'.
+        Rules:
+        - Do not mention the mood word (e.g., '{mood}') in the final prompt.
+        - Focus on strong visual metaphors, color palettes, lighting, and composition.
+        - The final prompt should be a single, concise phrase, no more than 25 words.
+        - Example for 'Sad/Depressed': 'A single, withered glowing flower in a vast, empty, rain-slicked city at twilight, cinematic lighting.'
+        - Example for 'Happy/Excited': 'Geometric shapes of pure light and vibrant color exploding in a joyful supernova, digital art.'
+        Generate the prompt now.
+        """
+        response = model.generate_content(meta_prompt)
+        creative_prompt = response.text.strip().replace('"', '')
+        logging.info(f"Generated creative prompt: '{creative_prompt}'")
+        return creative_prompt
+    except Exception as e:
+        logging.exception("CRITICAL ERROR during creative prompt generation.")
+        logging.warning("Falling back to a simple prompt.")
+        return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
+
 
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
@@ -78,6 +133,7 @@ def generate_cover_art_locally(prompt, audio_output_path):
     except Exception as e:
         logging.exception("CRITICAL ERROR during local art generation.")
         raise e
+
 
 def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback):
     input_file, output_file = settings.get("input_file"), settings.get("output_file")
@@ -119,27 +175,14 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         progress_callback(num_chunks + 1, total_steps)
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
         
-        # --- THIS IS THE FIX ---
-        # We now use the more robust `concat` filter instead of the demuxer.
-        # First, build the list of input files for the command line.
         input_args = []
         for chunk_file in processed_chunk_files:
             input_args.extend(['-i', chunk_file])
             
-        # Second, build the filter_complex string.
         filter_complex_string = "".join([f"[{i}:a]" for i in range(len(processed_chunk_files))])
         filter_complex_string += f"concat=n={len(processed_chunk_files)}:v=0:a=1[out]"
         
-        # Third, build the full command.
-        concat_command = [
-            'ffmpeg',
-            *input_args,
-            '-filter_complex', filter_complex_string,
-            '-map', '[out]',
-            concatenated_file_path
-        ]
-        # --- END FIX ---
-
+        concat_command = ['ffmpeg', *input_args, '-filter_complex', filter_complex_string, '-map', '[out]', concatenated_file_path]
         subprocess.run(concat_command, check=True, capture_output=True, text=True)
         status_callback("Concatenation complete.")
         log_memory_usage("After Concatenation")
@@ -231,7 +274,8 @@ def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, or
     else: return samples * gain + (y - samples * gain)
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
-    nyquist = 0.5 * sample_rate; center_norm = center_hz / nyquist
+    nyquist = 0.5 * sample_rate
+    center_norm = center_hz / nyquist
     bandwidth = center_norm / q; low, high = center_norm - (bandwidth / 2), center_norm + (bandwidth / 2)
     if low <= 0: low = 1e-9
     if high >= 1.0: high = 0.999999
