@@ -12,11 +12,12 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)
 
-# --- THIS IS THE ROBUST AUTH FIX ---
-# Construct an absolute path to the key file. This is more reliable and
-# ensures the application can find its credentials on startup, fixing the 502 error.
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-KEY_FILE_PATH = os.path.join(BASE_DIR, "sa-key.json")
+# --- REFACTORING FOR SECURITY (ADC FIX) ---
+# We no longer need to manually load a service account key file.
+# On App Engine, the client libraries will automatically use
+# Application Default Credentials (ADC), inheriting the permissions
+# of the App Engine service account.
+# This is more secure and removes the FileNotFoundError risk.
 # --- END OF FIX ---
 
 # --- Configuration ---
@@ -25,9 +26,10 @@ BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
 TASK_QUEUE = 'mastering-queue'
 TASK_LOCATION = 'us-east1'
 
-# Initialize Google Cloud clients using the absolute path to the service account key.
-storage_client = storage.Client.from_service_account_json(KEY_FILE_PATH)
-tasks_client = tasks_v2.CloudTasksClient.from_service_account_json(KEY_FILE_PATH)
+# Initialize Google Cloud clients without specifying a key file.
+# They will automatically use Application Default Credentials.
+storage_client = storage.Client()
+tasks_client = tasks_v2.CloudTasksClient()
 
 
 @app.route('/')
@@ -72,8 +74,6 @@ def start_processing():
         task_payload = {
             'gcs_uri': data['gcs_uri'],
             'settings': data['settings'],
-            # The worker will construct its own absolute path to the key file.
-            'key_file_path': "sa-key.json"
         }
         
         task = {
@@ -147,4 +147,3 @@ def get_status():
 if __name__ == '__main__':
     # This block is for local development only and is ignored by Google App Engine.
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
-

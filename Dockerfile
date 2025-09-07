@@ -15,12 +15,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Set the entrypoint to a command that runs your application.
-# This assumes your application is a Gunicorn server and your main app is in main.py.
+# This assumes your main application file is `main.py` and your application object is named `app`.
 # You may need to change 'main:app' to match your application entry point.
-# For example, if your file is app.py and your application object is named 'my_app',
-# you would use `gunicorn --bind :$PORT --workers 1 --threads 8 app:my_app`.
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
 
 # The GAE Flex environment automatically exposes the PORT environment variable.
-# We will use that to configure our server.
 EXPOSE $PORT
+

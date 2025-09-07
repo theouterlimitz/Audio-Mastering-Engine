@@ -1,8 +1,0 @@
-#backend
-
-Flask==2.3.2
-Flask-Cors==4.0.0
-google-cloud-storage
-google-cloud-pubsub
-gunicorn
-google-cloud-secret-manager
