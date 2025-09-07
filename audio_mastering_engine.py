@@ -1,6 +1,6 @@
-# audio_mastering_engine.py (v3.8 - Final Local Version with Universal Model)
-# This version fixes the 404 error for good by switching to the universally
-# available gemini-1.5-pro model for creative prompt generation.
+# audio_mastering_engine.py (v3.9 - Final Local Version with Flagship Model)
+# This version fixes the 404 error for good by switching to the main, stable,
+# flagship gemini-1.5-pro-latest model for creative prompt generation.
 
 import os
 import tempfile
@@ -88,8 +88,8 @@ def generate_creative_prompt(mood):
     logging.info(f"Brainstorming creative prompt for mood: {mood}")
     try:
         # --- THIS IS THE FINAL FIX ---
-        # Switched to the powerful and universally available Pro model.
-        model = GenerativeModel("gemini-1.5-pro-preview-0514")
+        # Switched to the main, stable, flagship Pro model.
+        model = GenerativeModel("gemini-1.5-pro-latest")
         
         meta_prompt = f"""
         You are an expert creative art director for album covers. Your task is to brainstorm a short, evocative, and highly artistic image prompt for an AI image generator. The prompt should capture the essence of a song with the following mood: '{mood}'.
@@ -292,3 +292,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
