@@ -1,5 +1,6 @@
-# audio_mastering_engine.py (v3.1 - Final Local Version with Bug Fix)
-# This version fixes an UnboundLocalError in the apply_peak_filter function.
+# audio_mastering_engine.py (v3.4 - Final Local Version with Concat Filter Fix)
+# This version replaces the fragile `concat` demuxer with the far more robust
+# `concat` filter. This is the definitive fix for the concatenation errors.
 
 import os
 import tempfile
@@ -33,7 +34,7 @@ def process_audio(settings, status_callback, progress_callback, art_callback):
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
         
         art_prompt = settings.get("art_prompt", "").strip()
-        if art_prompt and vertexai: # Also check if library is available
+        if art_prompt and vertexai:
             status_callback("Mastering complete. Starting AI art generation...")
             try:
                 output_file = settings.get("output_file")
@@ -85,18 +86,18 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
     with tempfile.TemporaryDirectory() as temp_dir:
         status_callback("Splitting audio into manageable chunks...")
         progress_callback(0, 100)
-        split_command = ['ffmpeg', '-i', input_file, '-f', 'segment', '-segment_time', '30', '-c', 'copy', os.path.join(temp_dir, 'input_chunk_%04d.wav')]
+        split_command = ['ffmpeg', '-i', input_file, '-f', 'segment', '-segment_time', '30', os.path.join(temp_dir, 'input_chunk_%04d.wav')]
         subprocess.run(split_command, check=True, capture_output=True, text=True)
         status_callback("Splitting complete.")
         log_memory_usage("After Splitting")
-        input_chunk_files = sorted([f for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
+        input_chunk_files = sorted([os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
         processed_chunk_files, num_chunks = [], len(input_chunk_files)
         total_steps = num_chunks + 3
-        for i, chunk_filename in enumerate(input_chunk_files):
+        
+        for i, chunk_path in enumerate(input_chunk_files):
             status_callback(f"Processing chunk {i+1} of {num_chunks}...")
             progress_callback(i + 1, total_steps)
             try:
-                chunk_path = os.path.join(temp_dir, chunk_filename)
                 chunk = AudioSegment.from_file(chunk_path)
                 if chunk.channels == 1: chunk = chunk.set_channels(2)
                 if chunk.sample_width != 2: chunk = chunk.set_sample_width(2)
@@ -108,31 +109,56 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
                 if settings.get("multiband"): processed_chunk = apply_multiband_compressor(processed_chunk, settings)
                 processed_chunk_filename = os.path.join(temp_dir, f"processed_chunk_{i:04d}.wav")
                 processed_chunk.export(processed_chunk_filename, format="wav")
+                processed_chunk_files.append(processed_chunk_filename)
                 del chunk, chunk_samples, processed_samples, processed_chunk
                 gc.collect()
                 log_memory_usage(f"After Chunk {i+1}")
             except Exception: logging.exception(f"CRITICAL: Failed during processing of chunk {i+1}."); raise
-        status_callback("Re-assembling processed chunks...")
+        
+        status_callback("Re-assembling processed chunks with concat filter...")
         progress_callback(num_chunks + 1, total_steps)
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
-        file_list_path = os.path.join(temp_dir, "filelist.txt")
-        with open(file_list_path, 'w') as f:
-            for filename in processed_chunk_files: f.write(f"file '{os.path.basename(filename)}'\n")
-        subprocess.run(['ffmpeg', '-f', 'concat', '-safe', '0', '-i', 'filelist.txt', '-c', 'copy', 'concatenated.wav'], check=True, cwd=temp_dir, capture_output=True, text=True)
+        
+        # --- THIS IS THE FIX ---
+        # We now use the more robust `concat` filter instead of the demuxer.
+        # First, build the list of input files for the command line.
+        input_args = []
+        for chunk_file in processed_chunk_files:
+            input_args.extend(['-i', chunk_file])
+            
+        # Second, build the filter_complex string.
+        filter_complex_string = "".join([f"[{i}:a]" for i in range(len(processed_chunk_files))])
+        filter_complex_string += f"concat=n={len(processed_chunk_files)}:v=0:a=1[out]"
+        
+        # Third, build the full command.
+        concat_command = [
+            'ffmpeg',
+            *input_args,
+            '-filter_complex', filter_complex_string,
+            '-map', '[out]',
+            concatenated_file_path
+        ]
+        # --- END FIX ---
+
+        subprocess.run(concat_command, check=True, capture_output=True, text=True)
         status_callback("Concatenation complete.")
         log_memory_usage("After Concatenation")
+        
         final_file_to_export = concatenated_file_path
         if settings.get("lufs") is not None:
             status_callback("Normalizing final loudness...")
             progress_callback(num_chunks + 2, total_steps)
             normalized_file_path = os.path.join(temp_dir, "normalized.wav")
             final_file_to_export = normalize_loudness_on_disk_with_ffmpeg(concatenated_file_path, normalized_file_path, settings.get("lufs"))
+        
         status_callback("Applying final limiting and exporting...")
         progress_callback(num_chunks + 3, total_steps)
         subprocess.run(['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file], check=True, capture_output=True, text=True)
+        
         progress_callback(total_steps, total_steps)
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
         log_memory_usage("Pipeline End")
+
 
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     logging.info(f"Starting true disk-based loudness normalization for {input_path}...")
@@ -203,23 +229,14 @@ def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, or
     y = lfilter(b, a, samples)
     if gain_db > 0: return samples + (y - samples) * (gain - 1)
     else: return samples * gain + (y - samples * gain)
-
-# --- THIS IS THE FIX ---
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
-    # The faulty one-liner has been split into two correct lines.
-    nyquist = 0.5 * sample_rate
-    center_norm = center_hz / nyquist
-    
-    bandwidth = center_norm / q
-    low = center_norm - (bandwidth / 2)
-    high = center_norm + (bandwidth / 2)
+    nyquist = 0.5 * sample_rate; center_norm = center_hz / nyquist
+    bandwidth = center_norm / q; low, high = center_norm - (bandwidth / 2), center_norm + (bandwidth / 2)
     if low <= 0: low = 1e-9
     if high >= 1.0: high = 0.999999
     sos = butter(4, [low, high], btype='bandpass', output='sos'); filtered_band = sosfilt(sos, samples)
     return samples + (filtered_band * (10 ** (gain_db / 20.0) - 1))
-# --- END FIX ---
-
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
     samples = audio_segment_to_float_array(chunk)
     low_sos = butter(4, low_crossover, btype='lowpass', fs=chunk.frame_rate, output='sos')
