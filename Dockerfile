@@ -1,20 +1,24 @@
-# Dockerfile
-# Use the official Python 3.11 image as a base
-FROM python:3.11-slim
+# Use the official Python image as a base image.
+# We are using python3.12-slim to keep the image size small.
+FROM python:3.12-slim
 
-# Set the working directory inside the container
+# Set the working directory in the container to /app.
 WORKDIR /app
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg
-
-# Copy the requirements file and install Python dependencies
+# Copy the requirements file into the container at /app.
 COPY requirements.txt .
+
+# Install any dependencies specified in requirements.txt.
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of your application code
+# Copy the local code from the current directory to the /app directory in the container.
 COPY . .
 
-# The command to run your app using Gunicorn (from your app.yaml)
-# App Engine will automatically substitute the $PORT environment variable.
+# Set the entrypoint to a command that runs your application.
+# This assumes your main application file is `main.py` and your application object is named `app`.
+# You may need to change 'main:app' to match your application entry point.
 CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 main:app
+
+# The GAE Flex environment automatically exposes the PORT environment variable.
+EXPOSE $PORT
+

@@ -1,0 +1,10 @@
+# This file tells Google Cloud Build how to deploy your application.
+steps:
+  # This step uses the pre-built 'gcloud' builder image.
+- name: 'gcr.io/cloud-builders/gcloud'
+  # This is the command it will run, which is the same one you've been using.
+  # The '.' indicates that it should deploy the source code from the current directory.
+  args: ['app', 'deploy', '.']
+  # Increase the timeout to 20 minutes to allow for the Docker build and deployment.
+  timeout: 1200s
+
