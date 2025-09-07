@@ -1,6 +1,6 @@
-# audio_mastering_engine.py (v3.10 - Final Local Version with Compatible Model)
-# This version fixes the 404 error for good by switching to the most
-# widely compatible and available model: gemini-pro.
+# audio_mastering_engine.py (v3.11 - Final Local Version with Direct API)
+# This version fixes the stubborn 404 error by bypassing the Vertex AI SDK
+# for prompt generation and using a direct REST API call instead.
 
 import os
 import tempfile
@@ -18,12 +18,14 @@ from scipy.signal import butter, sosfilt, lfilter
 
 try:
     import google.auth
+    import google.auth.transport.requests # <-- Needed for direct API calls
+    import requests # <-- The standard library for making HTTP requests
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
-    from vertexai.generative_models import GenerativeModel
+    # We no longer need the GenerativeModel import for this function
 except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
-    google, vertexai = None, None
+    google, vertexai, requests = None, None, None
 
 import ai_tagger
 
@@ -31,7 +33,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
-    Main entry point for the GUI. Now orchestrates the full AI pipeline.
+    Main entry point for the GUI. Orchestrates the full AI pipeline.
     """
     try:
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
@@ -49,7 +51,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
 
             if "Error" in mood:
                 status_callback(f"Failed: Could not analyze mood. {mood}")
-                final_art_prompt = None
             else:
                 status_callback(f"Mood detected: {mood}. Brainstorming creative prompt...")
                 final_art_prompt = generate_creative_prompt(mood)
@@ -84,13 +85,27 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
 
 
 def generate_creative_prompt(mood):
-    if not vertexai: raise RuntimeError("Vertex AI library is not available.")
-    logging.info(f"Brainstorming creative prompt for mood: {mood}")
+    """
+    Acts as a "Gemini Art Director" using a direct REST API call.
+    """
+    if not google or not requests:
+        raise RuntimeError("Required Google/Requests libraries are not available.")
+
+    logging.info(f"Brainstorming creative prompt for mood: {mood} via REST API")
     try:
-        # --- THIS IS THE FINAL FIX ---
-        # Switched to the most compatible and widely available model.
-        model = GenerativeModel("gemini-pro")
+        # 1. Get Application Default Credentials
+        credentials, project_id = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
+        auth_req = google.auth.transport.requests.Request()
+        credentials.refresh(auth_req)
+        access_token = credentials.token
         
+        # 2. Define the API endpoint and the model
+        gcp_location = 'us-central1'
+        api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
+        model_id = "gemini-1.5-pro-latest" # Using the most stable model name
+        url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
+
+        # 3. Construct the meta-prompt
         meta_prompt = f"""
         You are an expert creative art director for album covers. Your task is to brainstorm a short, evocative, and highly artistic image prompt for an AI image generator. The prompt should capture the essence of a song with the following mood: '{mood}'.
         Rules:
@@ -101,16 +116,40 @@ def generate_creative_prompt(mood):
         - Example for 'Happy/Excited': 'Geometric shapes of pure light and vibrant color exploding in a joyful supernova, digital art.'
         Generate the prompt now.
         """
-        response = model.generate_content(meta_prompt)
-        creative_prompt = response.text.strip().replace('"', '')
+
+        # 4. Create the JSON payload for the API request
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": meta_prompt}
+                    ]
+                }
+            ]
+        }
+        
+        # 5. Make the authenticated POST request
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json; charset=utf-8",
+        }
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status() # This will raise an error for non-200 responses
+        
+        # 6. Parse the response to get the generated text
+        response_json = response.json()
+        creative_prompt = response_json['candidates'][0]['content']['parts'][0]['text'].strip().replace('"', '')
+        
         logging.info(f"Generated creative prompt: '{creative_prompt}'")
         return creative_prompt
+
     except Exception as e:
-        logging.exception("CRITICAL ERROR during creative prompt generation.")
+        logging.exception("CRITICAL ERROR during direct API call for creative prompt.")
         logging.warning("Falling back to a simple prompt.")
         return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
 
 
+# --- All other functions remain unchanged ---
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally ---")
