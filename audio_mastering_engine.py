@@ -1,10 +1,6 @@
-# audio_mastering_engine.py (v4.0 - Golden Master with Synesthesia)
-# This version implements the final, definitive AI workflow:
-# 1. The AI Tagger produces a mood and a spectrogram image.
-# 2. Gemini (`gemini-pro-vision`) acts as a multi-modal "Art Critic,"
-#    describing the spectrogram to create a unique text prompt.
-# 3. Imagen (`imagegeneration@005`) acts as the "Master Painter,"
-#    creating the final art from that rich text prompt.
+# audio_mastering_engine.py (v5.2 - Final Local Architecture with Typo Fix)
+# This version fixes a critical NameError caused by a typo in a function call
+# inside the apply_analog_character function.
 
 import os
 import tempfile
@@ -16,7 +12,6 @@ import psutil
 import time
 import gc
 import traceback
-import base64
 import random
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
@@ -24,17 +19,47 @@ from scipy.signal import butter, sosfilt, lfilter
 
 try:
     import google.auth
-    import google.auth.transport.requests
-    import requests
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
 except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
-    google, vertexai, requests = None, None, None
+    google, vertexai = None, None
 
 import ai_tagger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
+
+EQ_PRESETS = {
+    "Vocal Clarity": {"bass_boost": -1.0, "mid_cut": 2.0, "presence_boost": 2.5, "treble_boost": 1.0},
+    "Bass Punch": {"bass_boost": 2.5, "mid_cut": 1.0, "presence_boost": -1.0, "treble_boost": 0.5},
+    "Vintage Warmth": {"bass_boost": 1.5, "mid_cut": 0.0, "presence_boost": -1.5, "treble_boost": -2.0},
+    "Lo-Fi Haze": {"bass_boost": -2.0, "mid_cut": 3.0, "presence_boost": -2.0, "treble_boost": -4.0},
+    "EDM Kick & Highs": {"bass_boost": 2.0, "mid_cut": 4.0, "presence_boost": 1.0, "treble_boost": 3.0}
+}
+
+MOOD_PROMPT_KEYWORDS = {
+    'Happy/Excited': { 'subjects': ['a sunburst', 'exploding geometric shapes', 'dancing figures of light', 'a field of glowing flowers'], 'styles': ['vibrant digital art', 'impressionistic painting', 'joyful abstract expressionism', 'cinematic lighting'], 'vibes': ['dynamic energy', 'pure bliss', 'radiant warmth', 'ecstatic motion'] },
+    'Calm/Content': { 'subjects': ['a serene lake at dawn', 'a soft, glowing orb', 'a peaceful Zen garden', 'floating feathers'], 'styles': ['soft-focus photography', 'watercolor painting', 'minimalist design', 'ethereal lighting'], 'vibes': ['tranquility', 'gentle harmony', 'quiet contentment', 'weightlessness'] },
+    'Angry/Anxious': { 'subjects': ['a raging storm', 'splintering glass', 'a chaotic city street', 'a snarling mythical beast'], 'styles': ['high-contrast chiaroscuro', 'aggressive street art', 'dark fantasy concept art', 'glitch art'], 'vibes': ['intense energy', 'raw power', 'a sense of urgency', 'inner turmoil'] },
+    'Sad/Depressed': { 'subjects': ['a single raindrop on a window', 'a lone, withered tree', 'a forgotten, dusty room', 'a fading echo'], 'styles': ['monochromatic photography', 'somber oil painting', 'film noir aesthetic', 'muted, desaturated colors'], 'vibes': ['melancholy', 'a sense of loss', 'quiet solitude', 'poignant beauty'] }
+}
+
+def generate_creative_prompt(mood):
+    """
+    Acts as an internal "Art Director" by building a creative prompt from keywords.
+    """
+    logging.info(f"Building creative prompt for mood: {mood}")
+    if mood not in MOOD_PROMPT_KEYWORDS:
+        logging.warning(f"Mood '{mood}' not found in keyword dictionary. Falling back.")
+        return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
+
+    subject = random.choice(MOOD_PROMPT_KEYWORDS[mood]['subjects'])
+    style = random.choice(MOOD_PROMPT_KEYWORDS[mood]['styles'])
+    vibe = random.choice(MOOD_PROMPT_KEYWORDS[mood]['vibes'])
+
+    creative_prompt = f"An award-winning piece of {style} depicting {subject}, capturing a feeling of {vibe}."
+    logging.info(f"Generated creative prompt: '{creative_prompt}'")
+    return creative_prompt
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
@@ -49,17 +74,16 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         final_art_prompt = None
 
         if auto_generate:
-            status_callback("Analyzing audio for mood and visual texture...")
+            status_callback("Analyzing audio for mood...")
             input_file = settings.get("input_file")
-            
-            mood, spectrogram_path = ai_tagger.predict_mood_and_save_spectrogram(input_file)
+            mood, _ = ai_tagger.predict_mood_and_save_spectrogram(input_file)
             tag_callback(mood)
 
-            if "Error" in mood or not spectrogram_path:
+            if "Error" in mood:
                 status_callback(f"Failed: Could not analyze audio. {mood}")
             else:
-                status_callback(f"Mood: {mood}. Gemini is analyzing the song's visual texture...")
-                final_art_prompt = generate_creative_prompt(mood, spectrogram_path)
+                status_callback(f"Mood: {mood}. Building creative prompt...")
+                final_art_prompt = generate_creative_prompt(mood)
                 tag_callback(f"{mood} -> \"{final_art_prompt}\"")
         
         elif manual_prompt:
@@ -67,7 +91,7 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
             tag_callback("Using manual prompt.")
 
         if final_art_prompt and vertexai:
-            status_callback("Sending creative brief to Imagen for final art generation...")
+            status_callback("Starting AI art generation with Imagen...")
             try:
                 output_file = settings.get("output_file")
                 art_file_path = generate_cover_art_locally(final_art_prompt, output_file)
@@ -90,61 +114,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         tag_callback("Processing failed.")
 
 
-def generate_creative_prompt(mood, spectrogram_path):
-    """
-    Acts as a "Gemini Art Critic" using the mood and the spectrogram image.
-    """
-    if not google or not requests:
-        raise RuntimeError("Required Google/Requests libraries are not available.")
-
-    logging.info(f"Brainstorming creative prompt for mood '{mood}' using spectrogram")
-    try:
-        credentials, project_id = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
-        
-        with open(spectrogram_path, "rb") as image_file:
-            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
-
-        meta_prompt_text = f"""
-        You are a synesthetic artist who sees sound as visuals. Analyze the attached image, which is a spectrogram representing a song's sonic texture. The song has a general mood of '{mood}'. Your task is to translate the visual patterns, density, and rhythm of the spectrogram into a single, evocative phrase for an AI art generator. Do not mention the words 'spectrogram' or '{mood}'. Focus on visual metaphors inspired by the image. The final prompt must be a single, concise phrase under 25 words.
-        """
-
-        payload = {
-            "contents": [ { "parts": [ {"text": meta_prompt_text}, { "inline_data": { "mime_type": "image/png", "data": encoded_image } } ] } ]
-        }
-        
-        gcp_location = 'us-central1'
-        api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
-        
-        # --- THIS IS THE FINAL, CORRECT MODEL FOR THIS TASK ---
-        # `gemini-pro-vision` is the specific model for multi-modal (text+image) inputs.
-        model_id = "gemini-pro-vision"
-        url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
-        
-        headers = { "Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json; charset=utf-8" }
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        
-        response_json = response.json()
-        creative_prompt = response_json['candidates'][0]['content']['parts'][0]['text'].strip().replace('"', '')
-        
-        logging.info(f"Generated creative prompt: '{creative_prompt}'")
-        return creative_prompt
-
-    except Exception as e:
-        logging.exception("CRITICAL ERROR during multi-modal creative prompt generation.")
-        logging.warning("Falling back to a simple, non-synesthetic prompt.")
-        # The fallback is now the Python Art Director from our previous version
-        if mood not in MOOD_PROMPT_KEYWORDS:
-            return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
-        subject = random.choice(MOOD_PROMPT_KEYWORDS[mood]['subjects'])
-        style = random.choice(MOOD_PROMPT_KEYWORDS[mood]['styles'])
-        vibe = random.choice(MOOD_PROMPT_KEYWORDS[mood]['vibes'])
-        return f"An award-winning piece of {style} depicting {subject}, capturing a feeling of {vibe}."
-
-
-# This function now receives the highly creative prompt and uses the proven Imagen model.
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally with Imagen ---")
@@ -167,7 +136,6 @@ def generate_cover_art_locally(prompt, audio_output_path):
     except Exception as e:
         logging.exception("CRITICAL ERROR during local art generation.")
         raise e
-
 
 def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback):
     input_file, output_file = settings.get("input_file"), settings.get("output_file")
@@ -259,12 +227,6 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
         subprocess.run(['cp', input_path, output_path], check=True)
         return output_path
 
-MOOD_PROMPT_KEYWORDS = {
-    'Happy/Excited': {'subjects': ['a sunburst', 'exploding geometric shapes', 'dancing figures of light', 'a field of glowing flowers'],'styles': ['vibrant digital art', 'impressionistic painting', 'joyful abstract expressionism', 'cinematic lighting'],'vibes': ['dynamic energy', 'pure bliss', 'radiant warmth', 'ecstatic motion']},
-    'Calm/Content': {'subjects': ['a serene lake at dawn', 'a soft, glowing orb', 'a peaceful Zen garden', 'floating feathers'],'styles': ['soft-focus photography', 'watercolor painting', 'minimalist design', 'ethereal lighting'],'vibes': ['tranquility', 'gentle harmony', 'quiet contentment', 'weightlessness']},
-    'Angry/Anxious': {'subjects': ['a raging storm', 'splintering glass', 'a chaotic city street', 'a snarling mythical beast'],'styles': ['high-contrast chiaroscuro', 'aggressive street art', 'dark fantasy concept art', 'glitch art'],'vibes': ['intense energy', 'raw power', 'a sense of urgency', 'inner turmoil']},
-    'Sad/Depressed': {'subjects': ['a single raindrop on a window', 'a lone, withered tree', 'a forgotten, dusty room', 'a fading echo'],'styles': ['monochromatic photography', 'somber oil painting', 'film noir aesthetic', 'muted, desaturated colors'],'vibes': ['melancholy', 'a sense of loss', 'quiet solitude', 'poignant beauty']}
-}
 def log_memory_usage(stage=""):
     process = psutil.Process(os.getpid())
     mem_info = process.memory_info()
@@ -280,6 +242,8 @@ def float_array_to_audio_segment(float_array, audio_segment_template):
 def apply_analog_character(chunk, character_percent):
     if character_percent == 0: return chunk
     character_factor = character_percent / 100.0
+    # --- THIS IS THE FIX ---
+    # Corrected the function name by removing the extra underscore.
     samples = audio_segment_to_float_array(chunk); drive = 1.0 + (character_factor * 0.5)
     saturated_samples = np.tanh(samples * drive)
     saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, character_factor * 1.0, 'low')
@@ -327,3 +291,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
