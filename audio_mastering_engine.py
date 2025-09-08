@@ -1,7 +1,8 @@
-# audio_mastering_engine.py (v4.0 - Golden Master with Correct AI Pipeline)
-# This version implements the final, correct AI workflow:
-# 1. Gemini (`gemini-pro`) is used ONLY for its strength: creative text generation.
-# 2. Imagen (`imagegeneration@005`) is used for what we've proven works: image generation.
+# audio_mastering_engine.py (v5.0 - Final Local Architecture)
+# This version implements the final, definitive architecture.
+# The failing Gemini call is REMOVED. The "Art Director" is now a Python
+# function that builds a creative prompt from keywords and passes it
+# to the proven, reliable Imagen model.
 
 import os
 import tempfile
@@ -13,23 +14,67 @@ import psutil
 import time
 import gc
 import traceback
+import random # <-- Needed for the new Art Director
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
 
 try:
     import google.auth
-    import google.auth.transport.requests
-    import requests
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
 except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
-    google, vertexai, requests = None, None, None
+    google, vertexai = None, None
 
 import ai_tagger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
+
+# --- THE NEW, SELF-CONTAINED "PYTHON ART DIRECTOR" ---
+MOOD_PROMPT_KEYWORDS = {
+    'Happy/Excited': {
+        'subjects': ['a sunburst', 'exploding geometric shapes', 'dancing figures of light', 'a field of glowing flowers'],
+        'styles': ['vibrant digital art', 'impressionistic painting', 'joyful abstract expressionism', 'cinematic lighting'],
+        'vibes': ['dynamic energy', 'pure bliss', 'radiant warmth', 'ecstatic motion']
+    },
+    'Calm/Content': {
+        'subjects': ['a serene lake at dawn', 'a soft, glowing orb', 'a peaceful Zen garden', 'floating feathers'],
+        'styles': ['soft-focus photography', 'watercolor painting', 'minimalist design', 'ethereal lighting'],
+        'vibes': ['tranquility', 'gentle harmony', 'quiet contentment', 'weightlessness']
+    },
+    'Angry/Anxious': {
+        'subjects': ['a raging storm', 'splintering glass', 'a chaotic city street', 'a snarling mythical beast'],
+        'styles': ['high-contrast chiaroscuro', 'aggressive street art', 'dark fantasy concept art', 'glitch art'],
+        'vibes': ['intense energy', 'raw power', 'a sense of urgency', 'inner turmoil']
+    },
+    'Sad/Depressed': {
+        'subjects': ['a single raindrop on a window', 'a lone, withered tree', 'a forgotten, dusty room', 'a fading echo'],
+        'styles': ['monochromatic photography', 'somber oil painting', 'film noir aesthetic', 'muted, desaturated colors'],
+        'vibes': ['melancholy', 'a sense of loss', 'quiet solitude', 'poignant beauty']
+    }
+}
+
+def generate_creative_prompt(mood):
+    """
+    Acts as an internal "Art Director" by building a creative prompt from keywords.
+    This function no longer makes any network calls.
+    """
+    logging.info(f"Building creative prompt for mood: {mood}")
+    if mood not in MOOD_PROMPT_KEYWORDS:
+        logging.warning(f"Mood '{mood}' not found in keyword dictionary. Falling back.")
+        return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
+
+    # Randomly select one keyword from each category for the given mood
+    subject = random.choice(MOOD_PROMPT_KEYWORDS[mood]['subjects'])
+    style = random.choice(MOOD_PROMPT_KEYWORDS[mood]['styles'])
+    vibe = random.choice(MOOD_PROMPT_KEYWORDS[mood]['vibes'])
+
+    # Assemble them into a final, creative prompt
+    creative_prompt = f"An award-winning piece of {style} depicting {subject}, capturing a feeling of {vibe}."
+    logging.info(f"Generated creative prompt: '{creative_prompt}'")
+    return creative_prompt
+
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
@@ -46,16 +91,13 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         if auto_generate:
             status_callback("Analyzing audio for mood...")
             input_file = settings.get("input_file")
-            
-            # The tagger provides the mood, but we no longer need the spectrogram path for the prompt
             mood, _ = ai_tagger.predict_mood_and_save_spectrogram(input_file)
             tag_callback(mood)
 
             if "Error" in mood:
                 status_callback(f"Failed: Could not analyze audio. {mood}")
             else:
-                status_callback(f"Mood: {mood}. Brainstorming creative prompt with Gemini...")
-                # The Art Director now only needs the mood to generate a text prompt
+                status_callback(f"Mood: {mood}. Building creative prompt...")
                 final_art_prompt = generate_creative_prompt(mood)
                 tag_callback(f"{mood} -> \"{final_art_prompt}\"")
         
@@ -67,7 +109,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
             status_callback("Starting AI art generation with Imagen...")
             try:
                 output_file = settings.get("output_file")
-                # The proven Imagen model now gets the creative prompt
                 art_file_path = generate_cover_art_locally(final_art_prompt, output_file)
                 status_callback("Success: AI art generation complete!")
                 art_callback(art_file_path)
@@ -88,48 +129,7 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         tag_callback("Processing failed.")
 
 
-def generate_creative_prompt(mood):
-    """
-    Acts as a "Gemini Art Director" using a direct REST API call for TEXT ONLY.
-    """
-    if not google or not requests:
-        raise RuntimeError("Required Google/Requests libraries are not available.")
-
-    logging.info(f"Brainstorming creative prompt for mood: {mood} via REST API")
-    try:
-        credentials, project_id = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
-        auth_req = google.auth.transport.requests.Request()
-        credentials.refresh(auth_req)
-        
-        gcp_location = 'us-central1'
-        api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
-        model_id = "gemini-pro" # Using the standard, reliable text model
-        url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
-
-        meta_prompt = f"""
-        You are an expert creative art director for album covers. Your task is to brainstorm a short, evocative, and highly artistic image prompt for an AI image generator. The prompt should capture the essence of a song with the following mood: '{mood}'.
-        Rules: - Do not mention the mood word (e.g., '{mood}') in the final prompt. - Focus on strong visual metaphors, color palettes, lighting, and composition. - The final prompt should be a single, concise phrase, no more than 25 words. - Example for 'Sad/Depressed': 'A single, withered glowing flower in a vast, empty, rain-slicked city at twilight, cinematic lighting.' - Example for 'Happy/Excited': 'Geometric shapes of pure light and vibrant color exploding in a joyful supernova, digital art.'
-        Generate the prompt now.
-        """
-
-        payload = { "contents": [ { "parts": [ {"text": meta_prompt} ] } ] }
-        headers = { "Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json; charset=utf-8" }
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status()
-        
-        response_json = response.json()
-        creative_prompt = response_json['candidates'][0]['content']['parts'][0]['text'].strip().replace('"', '')
-        
-        logging.info(f"Generated creative prompt: '{creative_prompt}'")
-        return creative_prompt
-
-    except Exception as e:
-        logging.exception("CRITICAL ERROR during direct API call for creative prompt.")
-        logging.warning("Falling back to a simple prompt.")
-        return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
-
-
-# --- This function is now the proven workhorse for image generation ---
+# --- All other helper functions remain unchanged ---
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally with Imagen ---")
@@ -141,7 +141,6 @@ def generate_cover_art_locally(prompt, audio_output_path):
             except Exception: raise RuntimeError("Could not determine GCP Project ID. Run 'gcloud config set project YOUR_PROJECT_ID'.")
         logging.info(f"Initializing Vertex AI for project '{gcloud_project_id}' in '{gcp_location}'")
         vertexai.init(project=gcloud_project_id, location=gcp_location, credentials=credentials)
-        # Using the proven Imagen model
         model = ImageGenerationModel.from_pretrained("imagegeneration@005")
         images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
         path, _ = os.path.split(audio_output_path)
@@ -153,7 +152,6 @@ def generate_cover_art_locally(prompt, audio_output_path):
     except Exception as e:
         logging.exception("CRITICAL ERROR during local art generation.")
         raise e
-
 
 def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback):
     input_file, output_file = settings.get("input_file"), settings.get("output_file")
@@ -312,3 +310,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
