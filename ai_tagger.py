@@ -1,39 +1,48 @@
-# ai_tagger.py (v2.0 - Feature Branch)
-# This version adds the ability to save a visualization of the
-# spectrogram to a file, to be used as a creative input.
+# ai_tagger.py (v2.1 - Final)
+# This version fixes two critical bugs:
+# 1. Imports the missing 'tempfile' module.
+# 2. Sets the Matplotlib backend to 'Agg' to prevent GUI conflicts
+#    when running in a background thread.
 
 import os
+import tempfile # <-- FIX #1: Import the missing module
 import numpy as np
 import joblib
 import librosa
-import librosa.display # <-- Needed for visualizing
-import matplotlib.pyplot as plt # <-- The plotting library
+import librosa.display
+
+# --- FIX #2: Set the Matplotlib backend ---
+# This must be done BEFORE pyplot is imported
+import matplotlib
+matplotlib.use('Agg')
+# --- END FIX ---
+
+import matplotlib.pyplot as plt
 import tensorflow as tf
-from PIL import Image # For resizing
+from PIL import Image
 
 # --- Configuration ---
-# We define these as constants so they're easy to change.
 MODEL_PATH = 'mood_cnn_augmented_model.keras'
 ENCODER_PATH = 'mood_cnn_label_encoder.joblib'
 IMG_HEIGHT = 128
 IMG_WIDTH = 128
 
-# --- Private Helper Functions ---
 
 def _load_models():
     """Loads the ML model and label encoder, handles errors."""
     if not os.path.exists(MODEL_PATH) or not os.path.exists(ENCODER_PATH):
-        print(f"ERROR: Model '{MODEL_PATH}' or '{ENCODER_PATH}' not found.")
+        logging.error(f"Model '{MODEL_PATH}' or '{ENCODER_PATH}' not found.")
         return None, None
     try:
-        print("Loading AI Tagger models...")
+        logging.info("Loading AI Tagger models...")
         model = tf.keras.models.load_model(MODEL_PATH)
         label_encoder = joblib.load(ENCODER_PATH)
-        print("AI Tagger models loaded successfully.")
+        logging.info("AI Tagger models loaded successfully.")
         return model, label_encoder
     except Exception as e:
-        print(f"ERROR loading models: {e}")
+        logging.exception("ERROR loading models")
         return None, None
+
 
 def _create_spectrogram_for_model(y, sr):
     """Creates a spectrogram suitable for model prediction."""
@@ -44,52 +53,42 @@ def _create_spectrogram_for_model(y, sr):
     resized_img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
     return resized_img
 
-# --- NEW PUBLIC FUNCTION ---
+
 def predict_mood_and_save_spectrogram(audio_file_path):
     """
     Analyzes an audio file, predicts its mood, and saves a visualization of its spectrogram.
-
-    Args:
-        audio_file_path (str): The path to the audio file.
-
-    Returns:
-        tuple: A tuple containing (predicted_mood, path_to_spectrogram_image).
-               Returns (error_message, None) on failure.
     """
     model, label_encoder = _load_models()
     if not model or not label_encoder:
         return "Error: Could not load AI models.", None
 
-    print(f"Analyzing mood for: {audio_file_path}")
+    logging.info(f"Analyzing mood for: {audio_file_path}")
     try:
         y, sr = librosa.load(audio_file_path, mono=True, duration=30)
         
-        # 1. Create spectrogram for the model
         spectrogram_for_model = _create_spectrogram_for_model(y, sr)
         
-        # 2. Make the prediction
         spectrogram_batch = np.expand_dims(spectrogram_for_model, axis=0)
         prediction = model.predict(spectrogram_batch)
         predicted_index = np.argmax(prediction)
         predicted_mood = label_encoder.inverse_transform([predicted_index])[0]
-        print(f"Predicted mood: {predicted_mood}")
+        logging.info(f"Predicted mood: {predicted_mood}")
 
-        # 3. Create and save a high-quality spectrogram for visualization
         plt.figure(figsize=(8, 6))
         S_full = librosa.feature.melspectrogram(y=y, sr=sr)
         S_db_full = librosa.power_to_db(S_full, ref=np.max)
         librosa.display.specshow(S_db_full, sr=sr, x_axis='time', y_axis='mel')
-        plt.axis('off') # Remove axes for a cleaner image
+        plt.axis('off')
         plt.tight_layout(pad=0)
         
-        # Save to a temporary file
         spectrogram_path = os.path.join(tempfile.gettempdir(), "spectrogram.png")
         plt.savefig(spectrogram_path, bbox_inches='tight', pad_inches=0)
-        plt.close() # Close the figure to free memory
+        plt.close()
 
-        print(f"Spectrogram saved to: {spectrogram_path}")
+        logging.info(f"Spectrogram saved to: {spectrogram_path}")
         return predicted_mood, spectrogram_path
 
     except Exception as e:
-        print(f"ERROR during mood prediction: {e}")
+        logging.exception("ERROR during mood prediction")
         return f"Error: {e}", None
+
