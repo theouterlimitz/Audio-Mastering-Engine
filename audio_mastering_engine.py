@@ -1,7 +1,6 @@
-# audio_mastering_engine.py (v3.13 - Feature Branch: Synesthesia Engine)
-# This version integrates the new spectrogram data into the creative workflow,
-# creating a true "synesthesia engine" by sending both mood and the song's
-# visual fingerprint to the Gemini Art Director.
+# audio_mastering_engine.py (v3.12 - Final Local Version with API Fix)
+# This version fixes the 404 error by switching to the universally
+# compatible 'gemini-pro' model ID for the direct REST API call.
 
 import os
 import tempfile
@@ -13,7 +12,7 @@ import psutil
 import time
 import gc
 import traceback
-import base64 # <-- Needed to encode the image for the API
+import base64
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
@@ -32,13 +31,11 @@ import ai_tagger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
-
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
     Main entry point for the GUI. Orchestrates the full AI pipeline.
     """
     try:
-        # --- Step 1: Master the Audio (Unchanged) ---
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
         status_callback("Mastering complete. Preparing for AI analysis...")
         
@@ -47,11 +44,9 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         final_art_prompt = None
 
         if auto_generate:
-            # --- Step 2: The New Synesthesia Workflow ---
             status_callback("Analyzing audio for mood and visual texture...")
             input_file = settings.get("input_file")
             
-            # The tagger now returns TWO pieces of data
             mood, spectrogram_path = ai_tagger.predict_mood_and_save_spectrogram(input_file)
             tag_callback(mood)
 
@@ -59,7 +54,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
                 status_callback(f"Failed: Could not analyze audio. {mood}")
             else:
                 status_callback(f"Mood: {mood}. Brainstorming creative prompt from visual data...")
-                # The Art Director now receives the spectrogram image as well
                 final_art_prompt = generate_creative_prompt(mood, spectrogram_path)
                 tag_callback(f"{mood} -> \"{final_art_prompt}\"")
         
@@ -67,7 +61,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
             final_art_prompt = manual_prompt
             tag_callback("Using manual prompt.")
 
-        # --- The rest of the pipeline remains the same ---
         if final_art_prompt and vertexai:
             status_callback("Starting AI art generation...")
             try:
@@ -92,7 +85,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         tag_callback("Processing failed.")
 
 
-# --- THIS FUNCTION IS SIGNIFICANTLY UPGRADED ---
 def generate_creative_prompt(mood, spectrogram_path):
     """
     Acts as a "Gemini Art Director" using the mood and the spectrogram image.
@@ -106,11 +98,9 @@ def generate_creative_prompt(mood, spectrogram_path):
         auth_req = google.auth.transport.requests.Request()
         credentials.refresh(auth_req)
         
-        # 1. Read the spectrogram image and encode it in Base64
         with open(spectrogram_path, "rb") as image_file:
             encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # 2. Construct the new, more powerful multi-modal meta-prompt
         meta_prompt_text = f"""
         You are a synesthetic artist who sees sound as visuals.
         Analyze the attached image, which is a spectrogram representing a song's sonic texture. The song has a general mood of '{mood}'.
@@ -120,26 +110,16 @@ def generate_creative_prompt(mood, spectrogram_path):
         The final prompt must be a single, concise phrase under 25 words.
         """
 
-        # 3. Build the direct REST API payload with both text and image
         payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": meta_prompt_text},
-                        {
-                            "inline_data": {
-                                "mime_type": "image/png",
-                                "data": encoded_image
-                            }
-                        }
-                    ]
-                }
-            ]
+            "contents": [ { "parts": [ {"text": meta_prompt_text}, { "inline_data": { "mime_type": "image/png", "data": encoded_image } } ] } ]
         }
         
         gcp_location = 'us-central1'
         api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
-        model_id = "gemini-1.5-pro-latest" # The most powerful model for multi-modal tasks
+        
+        # --- THIS IS THE FINAL FIX ---
+        # Using the most standard and universally available multi-modal model ID for the REST API.
+        model_id = "gemini-pro-vision"
         url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
         
         headers = { "Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json; charset=utf-8" }
@@ -157,9 +137,8 @@ def generate_creative_prompt(mood, spectrogram_path):
         logging.warning("Falling back to a simple prompt.")
         return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
 
-# --- All other functions (generate_cover_art_locally, etc.) are unchanged ---
+
 def generate_cover_art_locally(prompt, audio_output_path):
-    # This function now receives the highly creative prompt from the Art Director
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally ---")
     try:
@@ -340,3 +319,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
