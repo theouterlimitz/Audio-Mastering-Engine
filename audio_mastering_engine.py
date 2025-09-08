@@ -1,6 +1,7 @@
-# audio_mastering_engine.py (v3.11 - Final Local Version with Direct API)
-# This version fixes the stubborn 404 error by bypassing the Vertex AI SDK
-# for prompt generation and using a direct REST API call instead.
+# audio_mastering_engine.py (v3.13 - Feature Branch: Synesthesia Engine)
+# This version integrates the new spectrogram data into the creative workflow,
+# creating a true "synesthesia engine" by sending both mood and the song's
+# visual fingerprint to the Gemini Art Director.
 
 import os
 import tempfile
@@ -12,17 +13,17 @@ import psutil
 import time
 import gc
 import traceback
+import base64 # <-- Needed to encode the image for the API
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
 from scipy.signal import butter, sosfilt, lfilter
 
 try:
     import google.auth
-    import google.auth.transport.requests # <-- Needed for direct API calls
-    import requests # <-- The standard library for making HTTP requests
+    import google.auth.transport.requests
+    import requests
     import vertexai
     from vertexai.preview.vision_models import ImageGenerationModel
-    # We no longer need the GenerativeModel import for this function
 except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
     google, vertexai, requests = None, None, None
@@ -31,11 +32,13 @@ import ai_tagger
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
+
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     """
     Main entry point for the GUI. Orchestrates the full AI pipeline.
     """
     try:
+        # --- Step 1: Master the Audio (Unchanged) ---
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
         status_callback("Mastering complete. Preparing for AI analysis...")
         
@@ -44,22 +47,27 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         final_art_prompt = None
 
         if auto_generate:
-            status_callback("Analyzing audio for mood...")
+            # --- Step 2: The New Synesthesia Workflow ---
+            status_callback("Analyzing audio for mood and visual texture...")
             input_file = settings.get("input_file")
-            mood = ai_tagger.predict_mood(input_file)
+            
+            # The tagger now returns TWO pieces of data
+            mood, spectrogram_path = ai_tagger.predict_mood_and_save_spectrogram(input_file)
             tag_callback(mood)
 
-            if "Error" in mood:
-                status_callback(f"Failed: Could not analyze mood. {mood}")
+            if "Error" in mood or not spectrogram_path:
+                status_callback(f"Failed: Could not analyze audio. {mood}")
             else:
-                status_callback(f"Mood detected: {mood}. Brainstorming creative prompt...")
-                final_art_prompt = generate_creative_prompt(mood)
+                status_callback(f"Mood: {mood}. Brainstorming creative prompt from visual data...")
+                # The Art Director now receives the spectrogram image as well
+                final_art_prompt = generate_creative_prompt(mood, spectrogram_path)
                 tag_callback(f"{mood} -> \"{final_art_prompt}\"")
         
         elif manual_prompt:
             final_art_prompt = manual_prompt
             tag_callback("Using manual prompt.")
 
+        # --- The rest of the pipeline remains the same ---
         if final_art_prompt and vertexai:
             status_callback("Starting AI art generation...")
             try:
@@ -84,59 +92,60 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         tag_callback("Processing failed.")
 
 
-def generate_creative_prompt(mood):
+# --- THIS FUNCTION IS SIGNIFICANTLY UPGRADED ---
+def generate_creative_prompt(mood, spectrogram_path):
     """
-    Acts as a "Gemini Art Director" using a direct REST API call.
+    Acts as a "Gemini Art Director" using the mood and the spectrogram image.
     """
     if not google or not requests:
         raise RuntimeError("Required Google/Requests libraries are not available.")
 
-    logging.info(f"Brainstorming creative prompt for mood: {mood} via REST API")
+    logging.info(f"Brainstorming creative prompt for mood '{mood}' using spectrogram '{spectrogram_path}'")
     try:
-        # 1. Get Application Default Credentials
         credentials, project_id = google.auth.default(scopes=['https://www.googleapis.com/auth/cloud-platform'])
         auth_req = google.auth.transport.requests.Request()
         credentials.refresh(auth_req)
-        access_token = credentials.token
         
-        # 2. Define the API endpoint and the model
-        gcp_location = 'us-central1'
-        api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
-        model_id = "gemini-1.5-pro-latest" # Using the most stable model name
-        url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
+        # 1. Read the spectrogram image and encode it in Base64
+        with open(spectrogram_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode('utf-8')
 
-        # 3. Construct the meta-prompt
-        meta_prompt = f"""
-        You are an expert creative art director for album covers. Your task is to brainstorm a short, evocative, and highly artistic image prompt for an AI image generator. The prompt should capture the essence of a song with the following mood: '{mood}'.
-        Rules:
-        - Do not mention the mood word (e.g., '{mood}') in the final prompt.
-        - Focus on strong visual metaphors, color palettes, lighting, and composition.
-        - The final prompt should be a single, concise phrase, no more than 25 words.
-        - Example for 'Sad/Depressed': 'A single, withered glowing flower in a vast, empty, rain-slicked city at twilight, cinematic lighting.'
-        - Example for 'Happy/Excited': 'Geometric shapes of pure light and vibrant color exploding in a joyful supernova, digital art.'
-        Generate the prompt now.
+        # 2. Construct the new, more powerful multi-modal meta-prompt
+        meta_prompt_text = f"""
+        You are a synesthetic artist who sees sound as visuals.
+        Analyze the attached image, which is a spectrogram representing a song's sonic texture. The song has a general mood of '{mood}'.
+        Your task is to translate the visual patterns, density, and rhythm of the spectrogram into a single, evocative phrase for an AI art generator.
+        Do not mention the words 'spectrogram' or '{mood}'.
+        Focus on visual metaphors inspired by the image.
+        The final prompt must be a single, concise phrase under 25 words.
         """
 
-        # 4. Create the JSON payload for the API request
+        # 3. Build the direct REST API payload with both text and image
         payload = {
             "contents": [
                 {
                     "parts": [
-                        {"text": meta_prompt}
+                        {"text": meta_prompt_text},
+                        {
+                            "inline_data": {
+                                "mime_type": "image/png",
+                                "data": encoded_image
+                            }
+                        }
                     ]
                 }
             ]
         }
         
-        # 5. Make the authenticated POST request
-        headers = {
-            "Authorization": f"Bearer {access_token}",
-            "Content-Type": "application/json; charset=utf-8",
-        }
-        response = requests.post(url, json=payload, headers=headers)
-        response.raise_for_status() # This will raise an error for non-200 responses
+        gcp_location = 'us-central1'
+        api_endpoint = f"https://{gcp_location}-aiplatform.googleapis.com"
+        model_id = "gemini-1.5-pro-latest" # The most powerful model for multi-modal tasks
+        url = f"{api_endpoint}/v1/projects/{project_id}/locations/{gcp_location}/publishers/google/models/{model_id}:generateContent"
         
-        # 6. Parse the response to get the generated text
+        headers = { "Authorization": f"Bearer {credentials.token}", "Content-Type": "application/json; charset=utf-8" }
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()
+        
         response_json = response.json()
         creative_prompt = response_json['candidates'][0]['content']['parts'][0]['text'].strip().replace('"', '')
         
@@ -144,13 +153,13 @@ def generate_creative_prompt(mood):
         return creative_prompt
 
     except Exception as e:
-        logging.exception("CRITICAL ERROR during direct API call for creative prompt.")
+        logging.exception("CRITICAL ERROR during multi-modal creative prompt generation.")
         logging.warning("Falling back to a simple prompt.")
         return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
 
-
-# --- All other functions remain unchanged ---
+# --- All other functions (generate_cover_art_locally, etc.) are unchanged ---
 def generate_cover_art_locally(prompt, audio_output_path):
+    # This function now receives the highly creative prompt from the Art Director
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally ---")
     try:

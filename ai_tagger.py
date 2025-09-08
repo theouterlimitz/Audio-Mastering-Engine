@@ -1,106 +1,95 @@
-# ai_tagger.py
-# This module contains the logic for loading the pre-trained mood classification
-# model and making predictions on new audio files.
+# ai_tagger.py (v2.0 - Feature Branch)
+# This version adds the ability to save a visualization of the
+# spectrogram to a file, to be used as a creative input.
 
 import os
 import numpy as np
-import librosa
 import joblib
+import librosa
+import librosa.display # <-- Needed for visualizing
+import matplotlib.pyplot as plt # <-- The plotting library
 import tensorflow as tf
-import logging
+from PIL import Image # For resizing
 
 # --- Configuration ---
-IMG_HEIGHT = 128
-IMG_WIDTH = 128
+# We define these as constants so they're easy to change.
 MODEL_PATH = 'mood_cnn_augmented_model.keras'
 ENCODER_PATH = 'mood_cnn_label_encoder.joblib'
+IMG_HEIGHT = 128
+IMG_WIDTH = 128
 
-# --- Global Variables to hold the loaded models ---
-# We load them once to avoid reloading on every prediction.
-model = None
-label_encoder = None
+# --- Private Helper Functions ---
 
-def load_models():
-    """
-    Loads the Keras model and the label encoder from disk into memory.
-    """
-    global model, label_encoder
-    logging.info("Loading AI Tagger models...")
-    
+def _load_models():
+    """Loads the ML model and label encoder, handles errors."""
     if not os.path.exists(MODEL_PATH) or not os.path.exists(ENCODER_PATH):
-        logging.error("Model files not found! Ensure .keras and .joblib files are in the project directory.")
-        return False
-        
+        print(f"ERROR: Model '{MODEL_PATH}' or '{ENCODER_PATH}' not found.")
+        return None, None
     try:
+        print("Loading AI Tagger models...")
         model = tf.keras.models.load_model(MODEL_PATH)
         label_encoder = joblib.load(ENCODER_PATH)
-        logging.info("AI Tagger models loaded successfully.")
-        return True
+        print("AI Tagger models loaded successfully.")
+        return model, label_encoder
     except Exception as e:
-        logging.error(f"Error loading AI Tagger models: {e}")
-        return False
+        print(f"ERROR loading models: {e}")
+        return None, None
 
-def create_spectrogram_from_data(y, sr):
-    """
-    Creates a Mel Spectrogram from audio data and prepares it for the CNN.
-    (This is copied directly from your training script).
-    """
+def _create_spectrogram_for_model(y, sr):
+    """Creates a spectrogram suitable for model prediction."""
     S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=IMG_HEIGHT)
     S_db = librosa.power_to_db(S, ref=np.max)
-    
     S_db_norm = (S_db - np.min(S_db)) / (np.max(S_db) - np.min(S_db))
-    
     img = np.stack([S_db_norm]*3, axis=-1)
     resized_img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
-    
     return resized_img
 
-def predict_mood(audio_file_path):
+# --- NEW PUBLIC FUNCTION ---
+def predict_mood_and_save_spectrogram(audio_file_path):
     """
-    The main prediction function. Takes an audio file path, analyzes it,
-    and returns the predicted mood as a string.
-    """
-    global model, label_encoder
-    if model is None or label_encoder is None:
-        if not load_models():
-            return "Error: Models not loaded."
+    Analyzes an audio file, predicts its mood, and saves a visualization of its spectrogram.
 
+    Args:
+        audio_file_path (str): The path to the audio file.
+
+    Returns:
+        tuple: A tuple containing (predicted_mood, path_to_spectrogram_image).
+               Returns (error_message, None) on failure.
+    """
+    model, label_encoder = _load_models()
+    if not model or not label_encoder:
+        return "Error: Could not load AI models.", None
+
+    print(f"Analyzing mood for: {audio_file_path}")
     try:
-        logging.info(f"Analyzing mood for: {audio_file_path}")
-        # Load the first 30 seconds for a consistent analysis
         y, sr = librosa.load(audio_file_path, mono=True, duration=30)
         
-        # Create the spectrogram image
-        spectrogram = create_spectrogram_from_data(y, sr)
+        # 1. Create spectrogram for the model
+        spectrogram_for_model = _create_spectrogram_for_model(y, sr)
         
-        # The model expects a "batch" of images, so we add an extra dimension
-        spectrogram_batch = np.expand_dims(spectrogram, axis=0)
-        
-        # Make the prediction
-        prediction_probabilities = model.predict(spectrogram_batch)
-        
-        # Get the index of the highest probability
-        predicted_index = np.argmax(prediction_probabilities, axis=1)[0]
-        
-        # Decode the index back to its string label (e.g., 'Happy/Excited')
+        # 2. Make the prediction
+        spectrogram_batch = np.expand_dims(spectrogram_for_model, axis=0)
+        prediction = model.predict(spectrogram_batch)
+        predicted_index = np.argmax(prediction)
         predicted_mood = label_encoder.inverse_transform([predicted_index])[0]
-        
-        logging.info(f"Predicted mood: {predicted_mood}")
-        return predicted_mood
-        
-    except Exception as e:
-        logging.error(f"Error during mood prediction: {e}")
-        return "Error during analysis."
+        print(f"Predicted mood: {predicted_mood}")
 
-# Example usage (for testing this file directly)
-if __name__ == '__main__':
-    # You'll need to create a dummy audio file named 'test.wav' to run this test
-    # or change the path to a real audio file on your system.
-    test_file = 'test.wav' 
-    if os.path.exists(test_file):
-        mood = predict_mood(test_file)
-        print(f"\nThe predicted mood for '{test_file}' is: {mood}")
-    else:
-        print(f"\nCould not find '{test_file}'. Please provide a valid audio file to test.")
-        # Try loading models anyway to check if they are present
-        load_models()
+        # 3. Create and save a high-quality spectrogram for visualization
+        plt.figure(figsize=(8, 6))
+        S_full = librosa.feature.melspectrogram(y=y, sr=sr)
+        S_db_full = librosa.power_to_db(S_full, ref=np.max)
+        librosa.display.specshow(S_db_full, sr=sr, x_axis='time', y_axis='mel')
+        plt.axis('off') # Remove axes for a cleaner image
+        plt.tight_layout(pad=0)
+        
+        # Save to a temporary file
+        spectrogram_path = os.path.join(tempfile.gettempdir(), "spectrogram.png")
+        plt.savefig(spectrogram_path, bbox_inches='tight', pad_inches=0)
+        plt.close() # Close the figure to free memory
+
+        print(f"Spectrogram saved to: {spectrogram_path}")
+        return predicted_mood, spectrogram_path
+
+    except Exception as e:
+        print(f"ERROR during mood prediction: {e}")
+        return f"Error: {e}", None
