@@ -1,6 +1,7 @@
-# audio_mastering_engine.py (v5.2 - Final Local Architecture with Typo Fix)
-# This version fixes a critical NameError caused by a typo in a function call
-# inside the apply_analog_character function.
+# audio_mastering_engine.py (v5.3 - Golden Master with Filter Fix)
+# This version fixes the "silent audio" bug by implementing the correct,
+# industry-standard mathematical formulas in the EQ filter functions to
+# prevent phase cancellation issues.
 
 import os
 import tempfile
@@ -15,7 +16,7 @@ import traceback
 import random
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
-from scipy.signal import butter, sosfilt, lfilter
+from scipy.signal import butter, lfilter, sosfilt
 
 try:
     import google.auth
@@ -45,51 +46,38 @@ MOOD_PROMPT_KEYWORDS = {
 }
 
 def generate_creative_prompt(mood):
-    """
-    Acts as an internal "Art Director" by building a creative prompt from keywords.
-    """
     logging.info(f"Building creative prompt for mood: {mood}")
     if mood not in MOOD_PROMPT_KEYWORDS:
         logging.warning(f"Mood '{mood}' not found in keyword dictionary. Falling back.")
         return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
-
     subject = random.choice(MOOD_PROMPT_KEYWORDS[mood]['subjects'])
     style = random.choice(MOOD_PROMPT_KEYWORDS[mood]['styles'])
     vibe = random.choice(MOOD_PROMPT_KEYWORDS[mood]['vibes'])
-
     creative_prompt = f"An award-winning piece of {style} depicting {subject}, capturing a feeling of {vibe}."
     logging.info(f"Generated creative prompt: '{creative_prompt}'")
     return creative_prompt
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
-    """
-    Main entry point for the GUI. Orchestrates the final, correct AI pipeline.
-    """
     try:
         process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
         status_callback("Mastering complete. Preparing for AI analysis...")
-        
         auto_generate = settings.get("auto_generate_prompt", False)
         manual_prompt = settings.get("art_prompt", "").strip()
         final_art_prompt = None
-
         if auto_generate:
             status_callback("Analyzing audio for mood...")
             input_file = settings.get("input_file")
             mood, _ = ai_tagger.predict_mood_and_save_spectrogram(input_file)
             tag_callback(mood)
-
             if "Error" in mood:
                 status_callback(f"Failed: Could not analyze audio. {mood}")
             else:
                 status_callback(f"Mood: {mood}. Building creative prompt...")
                 final_art_prompt = generate_creative_prompt(mood)
                 tag_callback(f"{mood} -> \"{final_art_prompt}\"")
-        
         elif manual_prompt:
             final_art_prompt = manual_prompt
             tag_callback("Using manual prompt.")
-
         if final_art_prompt and vertexai:
             status_callback("Starting AI art generation with Imagen...")
             try:
@@ -104,7 +92,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         else:
             status_callback("Success: Processing complete! (No art generated)")
             art_callback(None)
-            
     except Exception as e:
         error_details = traceback.format_exc()
         logging.error(f"FATAL ERROR in process_audio: {error_details}")
@@ -112,7 +99,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         progress_callback(0, 1)
         art_callback(None)
         tag_callback("Processing failed.")
-
 
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
@@ -151,7 +137,6 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         input_chunk_files = sorted([os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
         processed_chunk_files, num_chunks = [], len(input_chunk_files)
         total_steps = num_chunks + 3
-        
         for i, chunk_path in enumerate(input_chunk_files):
             status_callback(f"Processing chunk {i+1} of {num_chunks}...")
             progress_callback(i + 1, total_steps)
@@ -172,11 +157,9 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
                 gc.collect()
                 log_memory_usage(f"After Chunk {i+1}")
             except Exception: logging.exception(f"CRITICAL: Failed during processing of chunk {i+1}."); raise
-        
         status_callback("Re-assembling processed chunks with concat filter...")
         progress_callback(num_chunks + 1, total_steps)
         concatenated_file_path = os.path.join(temp_dir, "concatenated.wav")
-        
         input_args = []
         for chunk_file in processed_chunk_files: input_args.extend(['-i', chunk_file])
         filter_complex_string = "".join([f"[{i}:a]" for i in range(len(processed_chunk_files))]) + f"concat=n={len(processed_chunk_files)}:v=0:a=1[out]"
@@ -184,25 +167,20 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         subprocess.run(concat_command, check=True, capture_output=True, text=True)
         status_callback("Concatenation complete.")
         log_memory_usage("After Concatenation")
-        
         final_file_to_export = concatenated_file_path
         if settings.get("lufs") is not None:
             status_callback("Normalizing final loudness...")
             progress_callback(num_chunks + 2, total_steps)
             normalized_file_path = os.path.join(temp_dir, "normalized.wav")
             final_file_to_export = normalize_loudness_on_disk_with_ffmpeg(concatenated_file_path, normalized_file_path, settings.get("lufs"))
-        
         status_callback("Applying final limiting and exporting...")
         progress_callback(num_chunks + 3, total_steps)
         subprocess.run(['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file], check=True, capture_output=True, text=True)
-        
         progress_callback(total_steps, total_steps)
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
         log_memory_usage("Pipeline End")
 
-
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
-    logging.info(f"Starting true disk-based loudness normalization for {input_path}...")
     try:
         command_pass1 = ['ffmpeg', '-i', input_path, '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']
         result_pass1 = subprocess.run(command_pass1, capture_output=True, text=True)
@@ -217,7 +195,6 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
             logging.warning("Measured loudness is -inf (silent audio). Skipping normalization.")
             subprocess.run(['cp', input_path, output_path], check=True)
             return output_path
-        logging.info(f"FFmpeg Pass 1 stats: {measured_stats}")
         command_pass2 = ['ffmpeg', '-i', input_path, '-af', f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:measured_I={measured_stats['input_i']}:measured_LRA={measured_stats['input_lra']}:measured_TP={measured_stats['input_tp']}:measured_thresh={measured_stats['input_thresh']}:offset={measured_stats['target_offset']}", '-y', output_path]
         subprocess.run(command_pass2, check=True, capture_output=True, text=True)
         return output_path
@@ -228,8 +205,7 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
         return output_path
 
 def log_memory_usage(stage=""):
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
+    mem_info = psutil.Process(os.getpid()).memory_info()
     logging.info(f"MEMORY USAGE at '{stage}': {mem_info.rss / 1024 ** 2:.2f} MB")
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
@@ -242,8 +218,6 @@ def float_array_to_audio_segment(float_array, audio_segment_template):
 def apply_analog_character(chunk, character_percent):
     if character_percent == 0: return chunk
     character_factor = character_percent / 100.0
-    # --- THIS IS THE FIX ---
-    # Corrected the function name by removing the extra underscore.
     samples = audio_segment_to_float_array(chunk); drive = 1.0 + (character_factor * 0.5)
     saturated_samples = np.tanh(samples * drive)
     saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, character_factor * 1.0, 'low')
@@ -265,21 +239,48 @@ def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     channel_samples = apply_peak_filter(channel_samples, sample_rate, 4000, settings.get("presence_boost", 0.0))
     channel_samples = apply_shelf_filter(channel_samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
     return channel_samples
-def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, order=2):
+
+# --- THE FIX: Correct, professional-grade filter implementations ---
+def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type, q=0.707):
     if gain_db == 0.0: return samples
-    gain = 10.0 ** (gain_db / 20.0); b, a = butter(order, cutoff_hz / (0.5 * sample_rate), btype=filter_type)
-    y = lfilter(b, a, samples)
-    if gain_db > 0: return samples + (y - samples) * (gain - 1)
-    else: return samples * gain + (y - samples * gain)
+    gain = 10.0 ** (gain_db / 20.0)
+    w0 = 2 * np.pi * cutoff_hz / sample_rate
+    alpha = np.sin(w0) / (2 * q)
+    A = np.sqrt(gain)
+
+    if filter_type == 'low':
+        b0 = A * ((A + 1) - (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha)
+        b1 = 2 * A * ((A - 1) - (A + 1) * np.cos(w0))
+        b2 = A * ((A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha)
+        a0 = (A + 1) + (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
+        a1 = -2 * ((A - 1) + (A + 1) * np.cos(w0))
+        a2 = (A + 1) + (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
+    else: # High shelf
+        b0 = A * ((A + 1) + (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha)
+        b1 = -2 * A * ((A - 1) + (A + 1) * np.cos(w0))
+        b2 = A * ((A + 1) + (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha)
+        a0 = (A + 1) - (A - 1) * np.cos(w0) + 2 * np.sqrt(A) * alpha
+        a1 = 2 * ((A - 1) - (A + 1) * np.cos(w0))
+        a2 = (A + 1) - (A - 1) * np.cos(w0) - 2 * np.sqrt(A) * alpha
+    
+    return lfilter([b0/a0, b1/a0, b2/a0], [1, a1/a0, a2/a0], samples)
+
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
-    if gain_db == 0: return samples
-    nyquist = 0.5 * sample_rate
-    center_norm = center_hz / nyquist
-    bandwidth = center_norm / q; low, high = center_norm - (bandwidth / 2), center_norm + (bandwidth / 2)
-    if low <= 0: low = 1e-9
-    if high >= 1.0: high = 0.999999
-    sos = butter(4, [low, high], btype='bandpass', output='sos'); filtered_band = sosfilt(sos, samples)
-    return samples + (filtered_band * (10 ** (gain_db / 20.0) - 1))
+    if gain_db == 0.0: return samples
+    gain = 10.0 ** (gain_db / 20.0)
+    w0 = 2 * np.pi * center_hz / sample_rate
+    alpha = np.sin(w0) / (2 * q)
+    
+    b0 = 1 + alpha * gain
+    b1 = -2 * np.cos(w0)
+    b2 = 1 - alpha * gain
+    a0 = 1 + alpha / gain
+    a1 = -2 * np.cos(w0)
+    a2 = 1 - alpha / gain
+
+    return lfilter([b0/a0, b1/a0, b2/a0], [1, a1/a0, a2/a0], samples)
+# --- END FIX ---
+
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
     samples = audio_segment_to_float_array(chunk)
     low_sos = butter(4, low_crossover, btype='lowpass', fs=chunk.frame_rate, output='sos')
