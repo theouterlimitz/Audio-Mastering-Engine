@@ -1,22 +1,15 @@
-# ai_tagger.py (v2.1 - Final)
-# This version fixes two critical bugs:
-# 1. Imports the missing 'tempfile' module.
-# 2. Sets the Matplotlib backend to 'Agg' to prevent GUI conflicts
-#    when running in a background thread.
+# ai_tagger.py (v2.2 - Final)
+# This version fixes a critical NameError by importing the logging module.
 
 import os
-import tempfile # <-- FIX #1: Import the missing module
+import tempfile
 import numpy as np
 import joblib
 import librosa
 import librosa.display
-
-# --- FIX #2: Set the Matplotlib backend ---
-# This must be done BEFORE pyplot is imported
+import logging # <-- THIS IS THE FIX
 import matplotlib
 matplotlib.use('Agg')
-# --- END FIX ---
-
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from PIL import Image
@@ -26,7 +19,6 @@ MODEL_PATH = 'mood_cnn_augmented_model.keras'
 ENCODER_PATH = 'mood_cnn_label_encoder.joblib'
 IMG_HEIGHT = 128
 IMG_WIDTH = 128
-
 
 def _load_models():
     """Loads the ML model and label encoder, handles errors."""
@@ -43,7 +35,6 @@ def _load_models():
         logging.exception("ERROR loading models")
         return None, None
 
-
 def _create_spectrogram_for_model(y, sr):
     """Creates a spectrogram suitable for model prediction."""
     S = librosa.feature.melspectrogram(y=y, sr=sr, n_mels=IMG_HEIGHT)
@@ -52,7 +43,6 @@ def _create_spectrogram_for_model(y, sr):
     img = np.stack([S_db_norm]*3, axis=-1)
     resized_img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
     return resized_img
-
 
 def predict_mood_and_save_spectrogram(audio_file_path):
     """
@@ -91,4 +81,3 @@ def predict_mood_and_save_spectrogram(audio_file_path):
     except Exception as e:
         logging.exception("ERROR during mood prediction")
         return f"Error: {e}", None
-
