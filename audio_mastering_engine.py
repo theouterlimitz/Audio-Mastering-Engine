@@ -1,6 +1,7 @@
-# audio_mastering_engine.py (v5.4 - Golden Master with Correct Filters)
-# This version reverts the EQ filter functions to the original, proven logic
-# that produced high-quality audio, fixing the "silent file" regression.
+# audio_mastering_engine.py (v5.5 - Golden Master with Correct Filters)
+# This version fixes the NameError by correctly importing lfilter.
+# Most importantly, it RESTORES the original, proven audio filter logic
+# to fix the regression bugs and get back to a stable, working state.
 
 import os
 import tempfile
@@ -15,7 +16,8 @@ import traceback
 import random
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
-from scipy.signal import butter, sosfilt # <-- Reverted to sosfilt for peak
+# --- FIX: Correctly import all necessary functions ---
+from scipy.signal import butter, sosfilt, lfilter
 
 try:
     import google.auth
@@ -240,12 +242,16 @@ def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     channel_samples = apply_shelf_filter(channel_samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
     return channel_samples
 
-# --- THE FIX: Reverted to the original, simple, and WORKING filter logic ---
+# --- FIX: Reverted to the original, simple, and WORKING filter logic ---
 def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type):
     if gain_db == 0.0: return samples
     b, a = butter(2, cutoff_hz / (0.5 * sample_rate), btype=filter_type)
-    # This is a simplified application, but known to be stable
-    return lfilter(b, a, samples)
+    y = lfilter(b, a, samples)
+    gain = 10.0 ** (gain_db / 20.0)
+    if gain_db > 0:
+        return samples + (y - samples) * (gain - 1)
+    else:
+        return samples * gain + (y - samples * gain)
 
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
