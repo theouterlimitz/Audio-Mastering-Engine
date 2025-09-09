@@ -2,18 +2,23 @@
 pydub
 numpy
 scipy
-psutil # For memory logging
-
-# GUI Libraries
-ttkthemes
-Pillow # For displaying images in the GUI
+psutil
 
 # AI Tagger & ML Libraries
 tensorflow
 librosa
 scikit-learn
 joblib
+matplotlib
 
-# Google Cloud Libraries (for Art Generation)
-google-cloud-aiplatform
+# Google Cloud Libraries
+google-cloud-firestore
+google-cloud-storage
 google-auth
+
+# Web Server
+Flask
+gunicorn
+
+# Shared Engine Dependency
+shared

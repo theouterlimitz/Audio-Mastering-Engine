@@ -1,19 +1,10 @@
-# Core Audio & DSP Libraries
-pydub
-numpy
-scipy
-psutil # For memory logging
+# Core Libraries
+Flask
+gunicorn
 
-# GUI Libraries
-ttkthemes
-Pillow # For displaying images in the GUI
-
-# AI Tagger & ML Libraries
-tensorflow
-librosa
-scikit-learn
-joblib
-
-# Google Cloud Libraries (for Art Generation)
-google-cloud-aiplatform
+# Google Cloud Libraries
+google-cloud-storage
+google-cloud-tasks
+google-cloud-firestore
 google-auth
+requests
