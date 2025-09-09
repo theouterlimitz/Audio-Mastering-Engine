@@ -12,7 +12,7 @@ env_variables:
   GCP_REGION: 'us-central1'
   TASK_QUEUE: 'mastering-queue'
   # --- THIS IS THE FINAL, CORRECT CONFIGURATION ---
-  FIREBASE_CONFIG_JSON: '{"apiKey":"AIzaSyBUTq0yR-r9J2JY6jCyTcpfccal1Qf3yps","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
+  FIREBASE_CONFIG_JSON: '{"apiKey":"API KEY","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
 
 service: default
 instance_class: F1
