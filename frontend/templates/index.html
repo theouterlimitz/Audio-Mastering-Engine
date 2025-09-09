@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Mastering Suite (Cloud Edition)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .slider-track { background: #374151; }
+        .slider-thumb { background: #818cf8; }
+        .progress-bar-fill { background-color: #6366f1; }
+        .btn-primary { background-color: #4f46e5; }
+        .btn-primary:hover { background-color: #4338ca; }
+        .btn-disabled { background-color: #4b5563; cursor: not-allowed; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-gray-900 text-gray-200 antialiased">
+    <div class="container mx-auto p-4 sm:p-8 max-w-4xl">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl md:text-5xl font-extrabold text-white tracking-tight">Audio Mastering Suite</h1>
+            <p class="mt-4 text-lg text-gray-400">Upload your track, define your sound, and let our AI-powered engine do the rest.</p>
+        </header>
+
+        <main id="app-container" class="bg-gray-800 p-6 sm:p-8 rounded-2xl shadow-2xl border border-gray-700">
+            
+            <!-- File Selection -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                <div>
+                    <label for="inputFile" class="block text-sm font-medium text-gray-300 mb-2">Input Audio File</label>
+                    <div class="flex items-center">
+                        <input type="text" id="inputFileName" placeholder="No file selected" class="bg-gray-700 text-gray-300 w-full rounded-l-md border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" readonly>
+                        <button id="browseButton" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-r-md">Browse</button>
+                        <input type="file" id="inputFile" class="hidden" accept="audio/*">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Parameters Grid -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-8">
+                <!-- Main Sliders will be dynamically generated here -->
+                <div id="sliders-container" class="md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6"></div>
+                
+                <!-- Multiband Compressor Section -->
+                <div class="md:col-span-2">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="multiband" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="ml-2 text-gray-300">Use Multiband Compressor</span>
+                    </label>
+                    <!-- This container will be shown/hidden -->
+                    <div id="multiband-controls-container" class="hidden mt-4 pl-6 border-l-2 border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                        <!-- Multiband sliders will be generated here -->
+                    </div>
+                </div>
+
+                <!-- Other Checkboxes -->
+                <div class="md:col-span-2 flex flex-col space-y-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" id="auto_generate_prompt" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                        <span class="ml-2 text-gray-300">Auto-generate art prompt from audio analysis?</span>
+                    </label>
+                     <label class="flex items-center">
+                        <input type="checkbox" id="create_mp3" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" checked>
+                        <span class="ml-2 text-gray-300">Also create high-quality MP3 for listening?</span>
+                    </label>
+                </div>
+            </div>
+            
+            <!-- AI Art Prompt -->
+            <div class="mb-8">
+                <label for="art_prompt" class="block text-sm font-medium text-gray-300 mb-2">Manual AI Art Prompt (Optional)</label>
+                <input type="text" id="art_prompt" class="bg-gray-700 w-full rounded-md border-gray-600 focus:ring-indigo-500 focus:border-indigo-500" placeholder="e.g., A vibrant explosion of color, digital art">
+            </div>
+
+            <!-- Processing & Status Section -->
+            <div id="processing-section" class="mt-8 border-t border-gray-700 pt-8">
+                <button id="processButton" class="w-full btn-primary text-white font-bold py-3 px-4 rounded-md text-lg transition duration-300 ease-in-out transform hover:scale-105 btn-disabled" disabled>Upload & Process</button>
+                <div id="status-container" class="mt-6 text-center hidden">
+                    <p id="statusLabel" class="text-indigo-300 font-medium"></p>
+                    <div id="progressBarContainer" class="w-full bg-gray-700 rounded-full h-2.5 mt-2 hidden">
+                        <div id="progressBar" class="progress-bar-fill h-2.5 rounded-full" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Results Section -->
+            <div id="results-section" class="mt-8 border-t border-gray-700 pt-8 hidden">
+                 <h3 class="text-2xl font-bold text-center mb-6 text-white">Your Masterpiece is Ready</h3>
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
+                     <div id="art-display" class="w-full aspect-square bg-gray-700 rounded-lg flex items-center justify-center">
+                         <p class="text-gray-400">Art will appear here</p>
+                     </div>
+                     <div class="space-y-4">
+                         <div id="studio-notes-container">
+                            <h4 class="text-lg font-semibold text-indigo-300">Studio Notes</h4>
+                            <p id="studio-notes" class="text-gray-400 text-sm p-3 bg-gray-700 rounded-md mt-2"></p>
+                         </div>
+                         <div id="download-links" class="space-y-3">
+                             <!-- Download links will be added here -->
+                         </div>
+                     </div>
+                 </div>
+                 <button id="resetButton" class="mt-8 w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-md">Master Another Track</button>
+            </div>
+
+        </main>
+        <footer class="text-center mt-8 text-gray-500 text-sm">
+            <p>Powered by Google Cloud</p>
+        </footer>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        const firebaseConfigJSON = `{{ firebase_config|safe or 'null' }}`;
+        const firebaseConfig = JSON.parse(firebaseConfigJSON);
+
+        if (!firebaseConfig) {
+            console.error("CRITICAL: Firebase configuration is missing.");
+            alert("Application is not configured correctly. Please contact support.");
+        }
+        
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, doc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // --- Main Application Logic ---
+        document.addEventListener('DOMContentLoaded', () => {
+
+            const ui = {
+                inputFile: document.getElementById('inputFile'),
+                inputFileName: document.getElementById('inputFileName'),
+                browseButton: document.getElementById('browseButton'),
+                processButton: document.getElementById('processButton'),
+                statusContainer: document.getElementById('status-container'),
+                statusLabel: document.getElementById('statusLabel'),
+                progressBarContainer: document.getElementById('progressBarContainer'),
+                progressBar: document.getElementById('progressBar'),
+                slidersContainer: document.getElementById('sliders-container'),
+                appContainer: document.getElementById('app-container'),
+                resultsSection: document.getElementById('results-section'),
+                artDisplay: document.getElementById('art-display'),
+                studioNotes: document.getElementById('studio-notes'),
+                downloadLinks: document.getElementById('download-links'),
+                resetButton: document.getElementById('resetButton'),
+                multibandCheckbox: document.getElementById('multiband'),
+                multibandControls: document.getElementById('multiband-controls-container')
+            };
+            
+            let currentJobId = null;
+            let unsubscribeFromJob = null;
+            let selectedFile = null;
+
+            const mainSliderDefs = [
+                { id: 'analog_character', label: 'Analog Character (%)', min: 0, max: 100, value: 0 },
+                { id: 'bass_boost', label: 'Bass (dB)', min: -6, max: 6, value: 0 },
+                { id: 'mid_cut', label: 'Mid Cut (dB)', min: 0, max: 6, value: 0 },
+                { id: 'presence_boost', label: 'Presence (dB)', min: -6, max: 6, value: 0 },
+                { id: 'treble_boost', label: 'Treble (dB)', min: -6, max: 6, value: 0 },
+                { id: 'width', label: 'Stereo Width', min: 0, max: 2, value: 1.0 },
+                { id: 'lufs', label: 'Target LUFS', min: -20, max: -6, value: -14.0 },
+            ];
+
+            const multibandSliderDefs = [
+                { id: 'low_thresh', label: 'Low Thresh (dB)', min: -40, max: 0, value: -25.0 },
+                { id: 'low_ratio', label: 'Low Ratio', min: 1, max: 10, value: 6.0 },
+                { id: 'mid_thresh', label: 'Mid Thresh (dB)', min: -40, max: 0, value: -20.0 },
+                { id: 'mid_ratio', label: 'Mid Ratio', min: 1, max: 10, value: 3.0 },
+                { id: 'high_thresh', label: 'High Thresh (dB)', min: -40, max: 0, value: -15.0 },
+                { id: 'high_ratio', label: 'High Ratio', min: 1, max: 10, value: 4.0 },
+            ];
+
+            function createSlider(container, def) {
+                const sliderContainer = document.createElement('div');
+                const label = document.createElement('label');
+                label.htmlFor = def.id;
+                label.className = "flex justify-between text-sm font-medium text-gray-300 mb-1";
+                label.innerHTML = `<span>${def.label}</span><span id="${def.id}-value">${def.value.toFixed(1)}</span>`;
+
+                const slider = document.createElement('input');
+                slider.type = 'range';
+                slider.id = def.id;
+                slider.min = def.min;
+                slider.max = def.max;
+                slider.value = def.value;
+                slider.step = (def.id.includes('lufs') || def.id.includes('width') || def.id.includes('ratio')) ? 0.1 : 0.5;
+                slider.className = "w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer";
+
+                slider.addEventListener('input', () => {
+                    document.getElementById(`${def.id}-value`).textContent = parseFloat(slider.value).toFixed(1);
+                });
+                
+                sliderContainer.appendChild(label);
+                sliderContainer.appendChild(slider);
+                container.appendChild(sliderContainer);
+            }
+
+            async function startJob() {
+                if (!selectedFile) { alert("Please select an audio file first."); return; }
+                setProcessingState(true, "Requesting secure upload link...");
+                try {
+                    const uploadRes = await fetch('/generate-upload-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ filename: selectedFile.name, contentType: selectedFile.type }), });
+                    if (!uploadRes.ok) throw new Error(`Server error: ${await uploadRes.text()}`);
+                    const { url, gcs_uri } = await uploadRes.json();
+                    setProcessingState(true, "Uploading file securely...");
+                    const gcsUploadRes = await fetch(url, { method: 'PUT', headers: { 'Content-Type': selectedFile.type }, body: selectedFile, });
+                    if (!gcsUploadRes.ok) throw new Error(`GCS upload failed: ${await gcsUploadRes.text()}`);
+                    setProcessingState(true, "Initiating mastering job...");
+                    const settings = { original_filename: selectedFile.name, ...getAllSliderValues(), ...getCheckboxValues() };
+                    const processRes = await fetch('/start-processing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ gcs_uri, settings }), });
+                    if (!processRes.ok) throw new Error(`Server error: ${await processRes.text()}`);
+                    const { job_id } = await processRes.json();
+                    currentJobId = job_id;
+                    listenForJobUpdates(job_id);
+                } catch (error) {
+                    console.error("Job failed:", error);
+                    setProcessingState(false, `Error: ${error.message}`);
+                    ui.progressBarContainer.classList.add('hidden');
+                }
+            }
+
+            function listenForJobUpdates(jobId) {
+                if (unsubscribeFromJob) unsubscribeFromJob();
+                const jobDocRef = doc(db, "mastering_jobs", jobId);
+                unsubscribeFromJob = onSnapshot(jobDocRef, async (doc) => {
+                    const data = doc.data();
+                    if (!data) return;
+                    setProcessingState(true, data.status || "Working...");
+                    ui.progressBar.style.width = `${data.progress || 0}%`;
+                    if (data.status === 'Complete' || data.status.startsWith('Success:')) {
+                        unsubscribeFromJob();
+                        handleJobCompletion(data);
+                    } else if (data.status === 'Error' || data.status.startsWith('Failed:')) {
+                        unsubscribeFromJob();
+                        setProcessingState(false, `Error: ${data.error_message || data.status}`);
+                        ui.progressBarContainer.classList.add('hidden');
+                    }
+                });
+            }
+            
+            async function handleJobCompletion(data) {
+                ui.appContainer.classList.add('hidden');
+                ui.resultsSection.classList.remove('hidden');
+                ui.studioNotes.textContent = data.studio_notes || 'Analysis complete.';
+                if (data.output_art_uri) {
+                    const url = await getDownloadUrl(data.output_art_uri);
+                    if (url) {
+                        const img = document.createElement('img');
+                        img.src = url;
+                        img.className = 'w-full h-full object-cover rounded-lg';
+                        ui.artDisplay.innerHTML = '';
+                        ui.artDisplay.appendChild(img);
+                    }
+                }
+                ui.downloadLinks.innerHTML = '';
+                if (data.output_wav_uri) await createDownloadLink(data.output_wav_uri, "Download Master (.wav)");
+                if (data.output_mp3_uri) await createDownloadLink(data.output_mp3_uri, "Download Listening Copy (.mp3)");
+            }
+
+            async function createDownloadLink(gcsPath, text) {
+                 const url = await getDownloadUrl(gcsPath);
+                 if (url) {
+                     const a = document.createElement('a');
+                     a.href = url;
+                     a.textContent = text;
+                     a.className = 'block w-full text-center btn-primary text-white font-bold py-2 px-4 rounded-md transition';
+                     a.download = gcsPath.split('/').pop();
+                     ui.downloadLinks.appendChild(a);
+                 }
+            }
+
+            async function getDownloadUrl(gcsPath) {
+                try {
+                    const res = await fetch('/get-signed-download-url', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ gcs_path: gcsPath }) });
+                    if (!res.ok) return null;
+                    const { url } = await res.json();
+                    return url;
+                } catch (e) { return null; }
+            }
+
+            function getAllSliderValues() {
+                const values = {};
+                [...mainSliderDefs, ...multibandSliderDefs].forEach(def => {
+                    const el = document.getElementById(def.id);
+                    if(el) values[def.id] = parseFloat(el.value);
+                });
+                return values;
+            }
+
+            function getCheckboxValues() {
+                return {
+                    multiband: ui.multibandCheckbox.checked,
+                    auto_generate_prompt: document.getElementById('auto_generate_prompt').checked,
+                    create_mp3: document.getElementById('create_mp3').checked,
+                    art_prompt: document.getElementById('art_prompt').value,
+                };
+            }
+
+            function setProcessingState(isProcessing, statusText) {
+                ui.statusContainer.classList.remove('hidden');
+                ui.statusLabel.textContent = statusText;
+                if(isProcessing) {
+                    ui.processButton.disabled = true;
+                    ui.processButton.classList.add('btn-disabled');
+                    ui.progressBarContainer.classList.remove('hidden');
+                } else {
+                    ui.processButton.disabled = false;
+                    ui.processButton.classList.remove('btn-disabled');
+                }
+            }
+            
+            function toggleMultibandControls() {
+                if (ui.multibandCheckbox.checked) {
+                    ui.multibandControls.classList.remove('hidden');
+                } else {
+                    ui.multibandControls.classList.add('hidden');
+                }
+            }
+
+            function initializeApp() {
+                // Create all sliders first
+                mainSliderDefs.forEach(def => createSlider(ui.slidersContainer, def));
+                multibandSliderDefs.forEach(def => createSlider(ui.multibandControls, def));
+                
+                // Then, set up all event listeners
+                ui.browseButton.addEventListener('click', () => ui.inputFile.click());
+                ui.inputFile.addEventListener('change', (e) => {
+                    selectedFile = e.target.files[0];
+                    if (selectedFile) {
+                        ui.inputFileName.value = selectedFile.name;
+                        ui.processButton.disabled = false;
+                        ui.processButton.classList.remove('btn-disabled');
+                    }
+                });
+                ui.processButton.addEventListener('click', startJob);
+                ui.resetButton.addEventListener('click', () => { window.location.reload(); });
+                ui.multibandCheckbox.addEventListener('change', toggleMultibandControls);
+                
+                // Set the initial state
+                toggleMultibandControls();
+            }
+
+            // --- Run the App ---
+            initializeApp();
+        });
+    </script>
+</body>
+</html>
+
+

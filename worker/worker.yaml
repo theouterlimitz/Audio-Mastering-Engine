@@ -1,0 +1,32 @@
+# worker.yaml
+# This file contains the specific configuration for our powerful backend worker.
+
+service: worker
+runtime: custom
+env: flex
+
+instance_class: B4 # A more powerful, memory-optimized instance for heavy audio processing.
+manual_scaling:
+  instances: 1 # We start with 1 always-on instance for predictable cost and readiness.
+
+# This tells App Engine to use the Dockerfile in the /worker directory
+# to build the environment for this service.
+resources:
+  cpu: 2
+  memory_gb: 4
+  disk_size_gb: 20
+
+# This is critical for our long-running tasks. It extends the request
+# timeout for tasks initiated by Cloud Tasks to the maximum allowed.
+handlers:
+- url: /.*
+  script: auto
+  secure: always
+
+# Liveness and readiness checks for a healthy instance
+liveness_check:
+  path: "/"
+readiness_check:
+  path: "/"
+  app_start_timeout_sec: 1800
+

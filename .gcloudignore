@@ -1,0 +1,25 @@
+# This file tells the gcloud CLI which files to not upload to the cloud.
+
+.gcloudignore
+.git
+.gitignore
+
+# Python build artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.cache
+nosetests.xml
+coverage.xml
+
+# Local development files
+local_app/
+*.local
