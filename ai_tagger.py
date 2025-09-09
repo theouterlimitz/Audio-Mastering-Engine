@@ -1,5 +1,6 @@
-# ai_tagger.py (v2.2 - Final)
-# This version fixes a critical NameError by importing the logging module.
+# ai_tagger.py (v3.0 - The "Musicologist")
+# This version upgrades the module from a simple mood predictor to a
+# full-fledged musicologist that extracts a rich technical brief from the audio.
 
 import os
 import tempfile
@@ -7,12 +8,11 @@ import numpy as np
 import joblib
 import librosa
 import librosa.display
-import logging # <-- THIS IS THE FIX
+import logging
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import tensorflow as tf
-from PIL import Image
 
 # --- Configuration ---
 MODEL_PATH = 'mood_cnn_augmented_model.keras'
@@ -20,17 +20,25 @@ ENCODER_PATH = 'mood_cnn_label_encoder.joblib'
 IMG_HEIGHT = 128
 IMG_WIDTH = 128
 
+# Cached models to avoid reloading on every call
+_model = None
+_label_encoder = None
+
 def _load_models():
-    """Loads the ML model and label encoder, handles errors."""
+    """Loads the ML model and label encoder, caching them for efficiency."""
+    global _model, _label_encoder
+    if _model and _label_encoder:
+        return _model, _label_encoder
+
     if not os.path.exists(MODEL_PATH) or not os.path.exists(ENCODER_PATH):
         logging.error(f"Model '{MODEL_PATH}' or '{ENCODER_PATH}' not found.")
         return None, None
     try:
-        logging.info("Loading AI Tagger models...")
-        model = tf.keras.models.load_model(MODEL_PATH)
-        label_encoder = joblib.load(ENCODER_PATH)
-        logging.info("AI Tagger models loaded successfully.")
-        return model, label_encoder
+        logging.info("Loading AI Tagger models for the first time...")
+        _model = tf.keras.models.load_model(MODEL_PATH)
+        _label_encoder = joblib.load(ENCODER_PATH)
+        logging.info("AI Tagger models loaded and cached successfully.")
+        return _model, _label_encoder
     except Exception as e:
         logging.exception("ERROR loading models")
         return None, None
@@ -44,40 +52,61 @@ def _create_spectrogram_for_model(y, sr):
     resized_img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
     return resized_img
 
-def predict_mood_and_save_spectrogram(audio_file_path):
+# --- THIS IS THE NEW, PRIMARY FUNCTION ---
+def analyze_song(audio_file_path):
     """
-    Analyzes an audio file, predicts its mood, and saves a visualization of its spectrogram.
+    Acts as a "Musicologist" to generate a full technical brief for a song.
+
+    Args:
+        audio_file_path (str): The path to the audio file.
+
+    Returns:
+        dict: A dictionary containing the song's analysis (mood, tempo, etc.),
+              or an error dictionary on failure.
     """
     model, label_encoder = _load_models()
     if not model or not label_encoder:
-        return "Error: Could not load AI models.", None
+        return {"error": "Could not load AI models."}
 
-    logging.info(f"Analyzing mood for: {audio_file_path}")
+    logging.info(f"Analyzing song: {audio_file_path}")
     try:
+        # Load the first 30 seconds for efficient analysis
         y, sr = librosa.load(audio_file_path, mono=True, duration=30)
         
+        # 1. Predict Mood (existing logic)
         spectrogram_for_model = _create_spectrogram_for_model(y, sr)
-        
         spectrogram_batch = np.expand_dims(spectrogram_for_model, axis=0)
         prediction = model.predict(spectrogram_batch)
         predicted_index = np.argmax(prediction)
         predicted_mood = label_encoder.inverse_transform([predicted_index])[0]
         logging.info(f"Predicted mood: {predicted_mood}")
-
-        plt.figure(figsize=(8, 6))
-        S_full = librosa.feature.melspectrogram(y=y, sr=sr)
-        S_db_full = librosa.power_to_db(S_full, ref=np.max)
-        librosa.display.specshow(S_db_full, sr=sr, x_axis='time', y_axis='mel')
-        plt.axis('off')
-        plt.tight_layout(pad=0)
         
-        spectrogram_path = os.path.join(tempfile.gettempdir(), "spectrogram.png")
-        plt.savefig(spectrogram_path, bbox_inches='tight', pad_inches=0)
-        plt.close()
+        # 2. Extract Technical Features (new logic)
+        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
+        rms = np.mean(librosa.feature.rms(y=y))
+        
+        # 3. Classify features into descriptive terms
+        tempo_class = "fast" if tempo > 120 else "moderate" if tempo > 90 else "slow"
+        brightness_class = "bright" if spectral_centroid > 2000 else "warm" if spectral_centroid > 1000 else "dark"
+        density_class = "dense" if rms > 0.1 else "moderate" if rms > 0.05 else "sparse"
 
-        logging.info(f"Spectrogram saved to: {spectrogram_path}")
-        return predicted_mood, spectrogram_path
+        # 4. Return the complete technical brief
+        tech_brief = {
+            "mood": predicted_mood,
+            "tempo": f"{tempo:.0f} BPM ({tempo_class})",
+            "brightness": brightness_class,
+            "density": density_class
+        }
+        logging.info(f"Generated Technical Brief: {tech_brief}")
+        return tech_brief
 
     except Exception as e:
-        logging.exception("ERROR during mood prediction")
-        return f"Error: {e}", None
+        logging.exception("ERROR during song analysis")
+        return {"error": str(e)}
+
+
+
+    
+    
+

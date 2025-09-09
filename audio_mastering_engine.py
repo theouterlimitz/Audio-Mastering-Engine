@@ -1,7 +1,7 @@
-# audio_mastering_engine.py (v5.5 - Golden Master with Correct Filters)
-# This version fixes the NameError by correctly importing lfilter.
-# Most importantly, it RESTORES the original, proven audio filter logic
-# to fix the regression bugs and get back to a stable, working state.
+# audio_mastering_engine.py (v6.0 - Final Local "Synesthesia" Architecture)
+# This version completes the local development by integrating the new "Musicologist"
+# module. The Art Director is now a sophisticated Python function that builds a
+# unique creative prompt from a rich technical brief (mood, tempo, brightness, density).
 
 import os
 import tempfile
@@ -16,8 +16,7 @@ import traceback
 import random
 from pydub import AudioSegment
 from pydub.effects import compress_dynamic_range
-# --- FIX: Correctly import all necessary functions ---
-from scipy.signal import butter, sosfilt, lfilter
+from scipy.signal import butter, lfilter, sosfilt
 
 try:
     import google.auth
@@ -39,51 +38,92 @@ EQ_PRESETS = {
     "EDM Kick & Highs": {"bass_boost": 2.0, "mid_cut": 4.0, "presence_boost": 1.0, "treble_boost": 3.0}
 }
 
-MOOD_PROMPT_KEYWORDS = {
-    'Happy/Excited': { 'subjects': ['a sunburst', 'exploding geometric shapes', 'dancing figures of light', 'a field of glowing flowers'], 'styles': ['vibrant digital art', 'impressionistic painting', 'joyful abstract expressionism', 'cinematic lighting'], 'vibes': ['dynamic energy', 'pure bliss', 'radiant warmth', 'ecstatic motion'] },
-    'Calm/Content': { 'subjects': ['a serene lake at dawn', 'a soft, glowing orb', 'a peaceful Zen garden', 'floating feathers'], 'styles': ['soft-focus photography', 'watercolor painting', 'minimalist design', 'ethereal lighting'], 'vibes': ['tranquility', 'gentle harmony', 'quiet contentment', 'weightlessness'] },
-    'Angry/Anxious': { 'subjects': ['a raging storm', 'splintering glass', 'a chaotic city street', 'a snarling mythical beast'], 'styles': ['high-contrast chiaroscuro', 'aggressive street art', 'dark fantasy concept art', 'glitch art'], 'vibes': ['intense energy', 'raw power', 'a sense of urgency', 'inner turmoil'] },
-    'Sad/Depressed': { 'subjects': ['a single raindrop on a window', 'a lone, withered tree', 'a forgotten, dusty room', 'a fading echo'], 'styles': ['monochromatic photography', 'somber oil painting', 'film noir aesthetic', 'muted, desaturated colors'], 'vibes': ['melancholy', 'a sense of loss', 'quiet solitude', 'poignant beauty'] }
+# --- THE NEW, SOPHISTICATED "PYTHON ART DIRECTOR" ---
+# This dictionary now contains keywords for multiple musical attributes.
+PROMPT_LIBRARY = {
+    'mood': {
+        'Happy/Excited': ['joyful abstract expressionism', 'vibrant digital art', 'ecstatic motion', 'radiant warmth'],
+        'Calm/Content': ['serene landscapes', 'minimalist design', 'soft-focus photography', 'ethereal lighting'],
+        'Angry/Anxious': ['dark fantasy concept art', 'aggressive street art', 'high-contrast chiaroscuro', 'glitch art'],
+        'Sad/Depressed': ['somber oil painting', 'monochromatic photography', 'film noir aesthetic', 'poignant beauty']
+    },
+    'brightness': {
+        'bright': ['glowing with brilliant light', 'sharp, crystalline details', 'a high-key color palette'],
+        'warm': ['bathed in golden hour light', 'soft, warm tones', 'a gentle, inviting glow'],
+        'dark': ['deep shadows and mystery', 'a low-key, moody atmosphere', 'dramatic, shadowy contrasts']
+    },
+    'density': {
+        'dense': ['a complex, layered composition', 'intricate, detailed patterns', 'a rich tapestry of textures'],
+        'moderate': ['a balanced composition with clear subjects', 'a harmonious blend of elements'],
+        'sparse': ['a minimalist composition with negative space', 'a single, striking subject', 'a feeling of vastness']
+    },
+    'tempo': {
+        'fast': ['dynamic motion blur', 'energetic, explosive brushstrokes', 'a sense of high velocity'],
+        'moderate': ['a steady, flowing rhythm', 'graceful, deliberate movement'],
+        'slow': ['a tranquil, still atmosphere', 'long exposure effect', 'a timeless, meditative feeling']
+    }
 }
 
-def generate_creative_prompt(mood):
-    logging.info(f"Building creative prompt for mood: {mood}")
-    if mood not in MOOD_PROMPT_KEYWORDS:
-        logging.warning(f"Mood '{mood}' not found in keyword dictionary. Falling back.")
-        return f"An artistic representation of the mood: {mood}, detailed, vibrant colors."
-    subject = random.choice(MOOD_PROMPT_KEYWORDS[mood]['subjects'])
-    style = random.choice(MOOD_PROMPT_KEYWORDS[mood]['styles'])
-    vibe = random.choice(MOOD_PROMPT_KEYWORDS[mood]['vibes'])
-    creative_prompt = f"An award-winning piece of {style} depicting {subject}, capturing a feeling of {vibe}."
-    logging.info(f"Generated creative prompt: '{creative_prompt}'")
-    return creative_prompt
+def generate_creative_prompt(tech_brief):
+    """
+    Acts as an internal Art Director, building a prompt from a technical brief.
+    """
+    logging.info(f"Building creative prompt from brief: {tech_brief}")
+    try:
+        mood_style = random.choice(PROMPT_LIBRARY['mood'][tech_brief['mood']])
+        brightness_desc = random.choice(PROMPT_LIBRARY['brightness'][tech_brief['brightness']])
+        density_desc = random.choice(PROMPT_LIBRARY['density'][tech_brief['density']])
+        tempo_desc = random.choice(PROMPT_LIBRARY['tempo'][tech_brief['tempo'].split(' ')[-1].replace(')','')]) # Extracts 'fast', 'slow' etc.
+
+        # Assemble the final, sophisticated prompt
+        creative_prompt = f"An award-winning piece of {mood_style}, {brightness_desc}, featuring {density_desc} and {tempo_desc}."
+        logging.info(f"Generated creative prompt: '{creative_prompt}'")
+        return creative_prompt
+    except KeyError as e:
+        logging.error(f"Could not find key {e} in prompt library. Falling back.")
+        return f"An artistic representation of the mood: {tech_brief.get('mood', 'unknown')}, detailed, vibrant colors."
+    except Exception as e:
+        logging.exception("Error building creative prompt. Falling back.")
+        return f"An artistic representation of the mood: {tech_brief.get('mood', 'unknown')}, detailed, vibrant colors."
+
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
+    """
+    Main entry point for the GUI. Orchestrates the final, correct AI pipeline.
+    """
     try:
-        process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
+        output_wav_path = process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
+        if settings.get("create_mp3", False):
+            export_to_mp3(output_wav_path, status_callback)
         status_callback("Mastering complete. Preparing for AI analysis...")
         auto_generate = settings.get("auto_generate_prompt", False)
         manual_prompt = settings.get("art_prompt", "").strip()
         final_art_prompt = None
         if auto_generate:
-            status_callback("Analyzing audio for mood...")
+            status_callback("Analyzing audio with the Musicologist...")
             input_file = settings.get("input_file")
-            mood, _ = ai_tagger.predict_mood_and_save_spectrogram(input_file)
-            tag_callback(mood)
-            if "Error" in mood:
-                status_callback(f"Failed: Could not analyze audio. {mood}")
+            
+            # 1. Get the rich technical brief from our upgraded tagger
+            tech_brief = ai_tagger.analyze_song(input_file)
+            
+            if "error" in tech_brief:
+                status_callback(f"Failed: Could not analyze audio. {tech_brief['error']}")
+                tag_callback(f"Analysis Error: {tech_brief['error']}")
             else:
-                status_callback(f"Mood: {mood}. Building creative prompt...")
-                final_art_prompt = generate_creative_prompt(mood)
-                tag_callback(f"{mood} -> \"{final_art_prompt}\"")
+                # 2. Display the rich brief in the GUI
+                brief_text = f"Mood: {tech_brief['mood']} | Tempo: {tech_brief['tempo']} | Brightness: {tech_brief['brightness']} | Density: {tech_brief['density']}"
+                tag_callback(brief_text)
+                
+                # 3. Build the creative prompt from the brief
+                status_callback("Building creative prompt from analysis...")
+                final_art_prompt = generate_creative_prompt(tech_brief)
         elif manual_prompt:
             final_art_prompt = manual_prompt
             tag_callback("Using manual prompt.")
         if final_art_prompt and vertexai:
             status_callback("Starting AI art generation with Imagen...")
             try:
-                output_file = settings.get("output_file")
-                art_file_path = generate_cover_art_locally(final_art_prompt, output_file)
+                art_file_path = generate_cover_art_locally(final_art_prompt, output_wav_path)
                 status_callback("Success: AI art generation complete!")
                 art_callback(art_file_path)
             except Exception as art_error:
@@ -101,6 +141,18 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         art_callback(None)
         tag_callback("Processing failed.")
 
+# --- All other helper functions remain the same ---
+def export_to_mp3(input_wav_path, status_callback):
+    if not input_wav_path or not os.path.exists(input_wav_path):
+        logging.warning("Input WAV file not found for MP3 conversion."); status_callback("Warning: Could not find master WAV to create MP3."); return
+    output_mp3_path = os.path.splitext(input_wav_path)[0] + ".mp3"
+    status_callback(f"Creating high-quality MP3...")
+    logging.info(f"Exporting WAV to MP3: {input_wav_path} -> {output_mp3_path}")
+    try:
+        mp3_command = ['ffmpeg', '-i', input_wav_path, '-q:a', '0', '-y', output_mp3_path]
+        subprocess.run(mp3_command, check=True, capture_output=True, text=True)
+        logging.info("MP3 export successful."); status_callback("High-quality MP3 created successfully.")
+    except Exception: logging.exception("Error during MP3 export."); status_callback("Error: Failed to create MP3 file.")
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
     logging.info("--- Starting generate_cover_art_locally with Imagen ---")
@@ -109,8 +161,7 @@ def generate_cover_art_locally(prompt, audio_output_path):
         gcp_location = 'us-central1'
         if not gcloud_project_id:
             try: gcloud_project_id = subprocess.check_output(['gcloud', 'config', 'get-value', 'project']).strip().decode('utf-8')
-            except Exception: raise RuntimeError("Could not determine GCP Project ID. Run 'gcloud config set project YOUR_PROJECT_ID'.")
-        logging.info(f"Initializing Vertex AI for project '{gcloud_project_id}' in '{gcp_location}'")
+            except Exception: raise RuntimeError("Could not determine GCP Project ID.")
         vertexai.init(project=gcloud_project_id, location=gcp_location, credentials=credentials)
         model = ImageGenerationModel.from_pretrained("imagegeneration@005")
         images = model.generate_images(prompt=prompt, number_of_images=1, aspect_ratio="1:1")
@@ -121,9 +172,7 @@ def generate_cover_art_locally(prompt, audio_output_path):
         logging.info(f"Image saved locally to: {image_output_path}")
         return image_output_path
     except Exception as e:
-        logging.exception("CRITICAL ERROR during local art generation.")
-        raise e
-
+        logging.exception("CRITICAL ERROR during local art generation."); raise e
 def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback):
     input_file, output_file = settings.get("input_file"), settings.get("output_file")
     if not input_file or not output_file: raise ValueError("Input or output file not specified.")
@@ -137,7 +186,7 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         log_memory_usage("After Splitting")
         input_chunk_files = sorted([os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
         processed_chunk_files, num_chunks = [], len(input_chunk_files)
-        total_steps = num_chunks + 3
+        total_steps = num_chunks + 4 # Added a step for analysis
         for i, chunk_path in enumerate(input_chunk_files):
             status_callback(f"Processing chunk {i+1} of {num_chunks}...")
             progress_callback(i + 1, total_steps)
@@ -179,8 +228,7 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         subprocess.run(['ffmpeg', '-i', final_file_to_export, '-filter:a', 'alimiter=level_in=1:level_out=1:limit=0.98:attack=5:release=50', '-y', output_file], check=True, capture_output=True, text=True)
         progress_callback(total_steps, total_steps)
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
-        log_memory_usage("Pipeline End")
-
+        return output_file
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     try:
         command_pass1 = ['ffmpeg', '-i', input_path, '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']
@@ -190,21 +238,17 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
             if line.strip().startswith('{'): json_started = True
             if json_started: json_str += line
             if line.strip().endswith('}'): break
-        if not json_str: raise RuntimeError("Could not parse loudnorm stats from ffmpeg's first pass.")
+        if not json_str: raise RuntimeError("Could not parse loudnorm stats.")
         measured_stats = json.loads(json_str)
         if measured_stats.get('input_i') == '-inf':
-            logging.warning("Measured loudness is -inf (silent audio). Skipping normalization.")
-            subprocess.run(['cp', input_path, output_path], check=True)
-            return output_path
+            logging.warning("Measured loudness is -inf (silent audio). Skipping normalization."); subprocess.run(['cp', input_path, output_path], check=True); return output_path
         command_pass2 = ['ffmpeg', '-i', input_path, '-af', f"loudnorm=I={target_lufs}:TP=-1.5:LRA=11:measured_I={measured_stats['input_i']}:measured_LRA={measured_stats['input_lra']}:measured_TP={measured_stats['input_tp']}:measured_thresh={measured_stats['input_thresh']}:offset={measured_stats['target_offset']}", '-y', output_path]
         subprocess.run(command_pass2, check=True, capture_output=True, text=True)
         return output_path
     except Exception as e:
-        logging.exception("Error during disk-based normalization.")
+        logging.exception("Error during disk-based normalization.");
         if isinstance(e, subprocess.CalledProcessError): logging.error(f"FFMPEG STDERR:\n{e.stderr}")
-        subprocess.run(['cp', input_path, output_path], check=True)
-        return output_path
-
+        subprocess.run(['cp', input_path, output_path], check=True); return output_path
 def log_memory_usage(stage=""):
     mem_info = psutil.Process(os.getpid()).memory_info()
     logging.info(f"MEMORY USAGE at '{stage}': {mem_info.rss / 1024 ** 2:.2f} MB")
@@ -219,7 +263,7 @@ def float_array_to_audio_segment(float_array, audio_segment_template):
 def apply_analog_character(chunk, character_percent):
     if character_percent == 0: return chunk
     character_factor = character_percent / 100.0
-    samples = audio_segment_to_float_array(chunk) # Corrected typo
+    samples = audio_segment_to_float_array(chunk)
     drive = 1.0 + (character_factor * 0.5)
     saturated_samples = np.tanh(samples * drive)
     saturated_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 120, character_factor * 1.0, 'low')
@@ -241,33 +285,22 @@ def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     channel_samples = apply_peak_filter(channel_samples, sample_rate, 4000, settings.get("presence_boost", 0.0))
     channel_samples = apply_shelf_filter(channel_samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
     return channel_samples
-
-# --- FIX: Reverted to the original, simple, and WORKING filter logic ---
 def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type):
     if gain_db == 0.0: return samples
     b, a = butter(2, cutoff_hz / (0.5 * sample_rate), btype=filter_type)
     y = lfilter(b, a, samples)
     gain = 10.0 ** (gain_db / 20.0)
-    if gain_db > 0:
-        return samples + (y - samples) * (gain - 1)
-    else:
-        return samples * gain + (y - samples * gain)
-
+    if gain_db > 0: return samples + (y - samples) * (gain - 1)
+    else: return samples * gain + (y - samples * gain)
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
-    nyquist = 0.5 * sample_rate
-    center_norm = center_hz / nyquist
-    bandwidth = center_norm / q
-    low = center_norm - (bandwidth / 2)
-    high = center_norm + (bandwidth / 2)
+    nyquist = 0.5 * sample_rate; center_norm = center_hz / nyquist; bandwidth = center_norm / q
+    low, high = center_norm - (bandwidth / 2), center_norm + (bandwidth / 2)
     if low <= 0: low = 1e-9
     if high >= 1.0: high = 0.999999
-    sos = butter(4, [low, high], btype='bandpass', output='sos')
-    filtered_band = sosfilt(sos, samples)
+    sos = butter(4, [low, high], btype='bandpass', output='sos'); filtered_band = sosfilt(sos, samples)
     gain_factor = 10 ** (gain_db / 20.0)
     return samples + (filtered_band * (gain_factor - 1))
-# --- END FIX ---
-
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
     samples = audio_segment_to_float_array(chunk)
     low_sos = butter(4, low_crossover, btype='lowpass', fs=chunk.frame_rate, output='sos')
