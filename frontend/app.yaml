@@ -1,5 +1,6 @@
 # frontend/app.yaml
 # This is the secure version of the frontend service configuration.
+# It now contains the new, correct, and restricted Firebase config.
 
 runtime: custom
 env: flex
@@ -10,18 +11,13 @@ env_variables:
   GCP_PROJECT: ${GAE_PROJECT}
   GCP_REGION: 'us-central1'
   TASK_QUEUE: 'mastering-queue'
-  # --- THIS IS THE FIX ---
-  # We are now passing the Firebase config via a SECURE build-time variable.
-  # This keeps the secret API key out of our source code.
-  FIREBASE_CONFIG_JSON: ${FIREBASE_CONFIG_JSON}
+  # --- THIS IS THE FINAL, CORRECT CONFIGURATION ---
+  FIREBASE_CONFIG_JSON: '{"apiKey":"AIzaSyBUTq0yR-r9J2JY6jCyTcpfccal1Qf3yps","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
 
 service: default
 instance_class: F1
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 2
-
-
-
 
 
