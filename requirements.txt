@@ -4,16 +4,18 @@ numpy
 scipy
 psutil # For memory logging
 
-# GUI Libraries
-ttkthemes
-Pillow # For displaying images in the GUI
-
 # AI Tagger & ML Libraries
 tensorflow
 librosa
 scikit-learn
 joblib
+matplotlib # Still needed by the tagger to create spectrograms
 
-# Google Cloud Libraries (for Art Generation)
+# Google Cloud Libraries
 google-cloud-aiplatform
 google-auth
+requests # For direct API calls
+
+# Web Server Libraries
+Flask
+gunicorn
