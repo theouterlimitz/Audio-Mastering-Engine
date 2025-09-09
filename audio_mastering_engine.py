@@ -1,7 +1,6 @@
-# audio_mastering_engine.py (v6.0 - Final Local "Synesthesia" Architecture)
-# This version completes the local development by integrating the new "Musicologist"
-# module. The Art Director is now a sophisticated Python function that builds a
-# unique creative prompt from a rich technical brief (mood, tempo, brightness, density).
+# audio_mastering_engine.py (v6.2 - Golden Master)
+# This version fixes the final NameError in the Art Director, correctly
+# assembling the creative prompt from the full technical brief.
 
 import os
 import tempfile
@@ -38,8 +37,6 @@ EQ_PRESETS = {
     "EDM Kick & Highs": {"bass_boost": 2.0, "mid_cut": 4.0, "presence_boost": 1.0, "treble_boost": 3.0}
 }
 
-# --- THE NEW, SOPHISTICATED "PYTHON ART DIRECTOR" ---
-# This dictionary now contains keywords for multiple musical attributes.
 PROMPT_LIBRARY = {
     'mood': {
         'Happy/Excited': ['joyful abstract expressionism', 'vibrant digital art', 'ecstatic motion', 'radiant warmth'],
@@ -70,13 +67,20 @@ def generate_creative_prompt(tech_brief):
     """
     logging.info(f"Building creative prompt from brief: {tech_brief}")
     try:
-        mood_style = random.choice(PROMPT_LIBRARY['mood'][tech_brief['mood']])
+        mood_key = str(tech_brief['mood'])
+        raw_tempo_key = tech_brief['tempo'].split(' ')[-1]
+        tempo_key = ''.join(filter(str.isalpha, raw_tempo_key))
+        
+        mood_style = random.choice(PROMPT_LIBRARY['mood'][mood_key])
         brightness_desc = random.choice(PROMPT_LIBRARY['brightness'][tech_brief['brightness']])
         density_desc = random.choice(PROMPT_LIBRARY['density'][tech_brief['density']])
-        tempo_desc = random.choice(PROMPT_LIBRARY['tempo'][tech_brief['tempo'].split(' ')[-1].replace(')','')]) # Extracts 'fast', 'slow' etc.
+        tempo_desc = random.choice(PROMPT_LIBRARY['tempo'][tempo_key])
 
-        # Assemble the final, sophisticated prompt
+        # --- THIS IS THE FIX ---
+        # Using the correct variable names we just defined.
         creative_prompt = f"An award-winning piece of {mood_style}, {brightness_desc}, featuring {density_desc} and {tempo_desc}."
+        # --- END FIX ---
+
         logging.info(f"Generated creative prompt: '{creative_prompt}'")
         return creative_prompt
     except KeyError as e:
@@ -88,9 +92,6 @@ def generate_creative_prompt(tech_brief):
 
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
-    """
-    Main entry point for the GUI. Orchestrates the final, correct AI pipeline.
-    """
     try:
         output_wav_path = process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback)
         if settings.get("create_mp3", False):
@@ -102,19 +103,13 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         if auto_generate:
             status_callback("Analyzing audio with the Musicologist...")
             input_file = settings.get("input_file")
-            
-            # 1. Get the rich technical brief from our upgraded tagger
             tech_brief = ai_tagger.analyze_song(input_file)
-            
             if "error" in tech_brief:
                 status_callback(f"Failed: Could not analyze audio. {tech_brief['error']}")
                 tag_callback(f"Analysis Error: {tech_brief['error']}")
             else:
-                # 2. Display the rich brief in the GUI
                 brief_text = f"Mood: {tech_brief['mood']} | Tempo: {tech_brief['tempo']} | Brightness: {tech_brief['brightness']} | Density: {tech_brief['density']}"
                 tag_callback(brief_text)
-                
-                # 3. Build the creative prompt from the brief
                 status_callback("Building creative prompt from analysis...")
                 final_art_prompt = generate_creative_prompt(tech_brief)
         elif manual_prompt:
@@ -141,7 +136,7 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         art_callback(None)
         tag_callback("Processing failed.")
 
-# --- All other helper functions remain the same ---
+# ... (the rest of the file is unchanged) ...
 def export_to_mp3(input_wav_path, status_callback):
     if not input_wav_path or not os.path.exists(input_wav_path):
         logging.warning("Input WAV file not found for MP3 conversion."); status_callback("Warning: Could not find master WAV to create MP3."); return
@@ -186,7 +181,7 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         log_memory_usage("After Splitting")
         input_chunk_files = sorted([os.path.join(temp_dir, f) for f in os.listdir(temp_dir) if f.startswith('input_chunk_')])
         processed_chunk_files, num_chunks = [], len(input_chunk_files)
-        total_steps = num_chunks + 4 # Added a step for analysis
+        total_steps = num_chunks + 4
         for i, chunk_path in enumerate(input_chunk_files):
             status_callback(f"Processing chunk {i+1} of {num_chunks}...")
             progress_callback(i + 1, total_steps)

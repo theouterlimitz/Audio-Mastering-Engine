@@ -1,6 +1,7 @@
-# ai_tagger.py (v3.0 - The "Musicologist")
-# This version upgrades the module from a simple mood predictor to a
-# full-fledged musicologist that extracts a rich technical brief from the audio.
+# ai_tagger.py (v3.1 - Golden Master)
+# This version fixes a critical TypeError by correctly calculating the
+# average tempo from the librosa output, making it robust to songs
+# with complex or changing rhythms.
 
 import os
 import tempfile
@@ -52,17 +53,9 @@ def _create_spectrogram_for_model(y, sr):
     resized_img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
     return resized_img
 
-# --- THIS IS THE NEW, PRIMARY FUNCTION ---
 def analyze_song(audio_file_path):
     """
     Acts as a "Musicologist" to generate a full technical brief for a song.
-
-    Args:
-        audio_file_path (str): The path to the audio file.
-
-    Returns:
-        dict: A dictionary containing the song's analysis (mood, tempo, etc.),
-              or an error dictionary on failure.
     """
     model, label_encoder = _load_models()
     if not model or not label_encoder:
@@ -70,10 +63,9 @@ def analyze_song(audio_file_path):
 
     logging.info(f"Analyzing song: {audio_file_path}")
     try:
-        # Load the first 30 seconds for efficient analysis
         y, sr = librosa.load(audio_file_path, mono=True, duration=30)
         
-        # 1. Predict Mood (existing logic)
+        # 1. Predict Mood
         spectrogram_for_model = _create_spectrogram_for_model(y, sr)
         spectrogram_batch = np.expand_dims(spectrogram_for_model, axis=0)
         prediction = model.predict(spectrogram_batch)
@@ -81,8 +73,13 @@ def analyze_song(audio_file_path):
         predicted_mood = label_encoder.inverse_transform([predicted_index])[0]
         logging.info(f"Predicted mood: {predicted_mood}")
         
-        # 2. Extract Technical Features (new logic)
-        tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        # 2. Extract Technical Features
+        # --- THIS IS THE FIX ---
+        # We now calculate the mean of the tempo array to get a single value.
+        estimated_tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
+        tempo = np.mean(estimated_tempo)
+        # --- END FIX ---
+        
         spectral_centroid = np.mean(librosa.feature.spectral_centroid(y=y, sr=sr))
         rms = np.mean(librosa.feature.rms(y=y))
         
@@ -104,9 +101,4 @@ def analyze_song(audio_file_path):
     except Exception as e:
         logging.exception("ERROR during song analysis")
         return {"error": str(e)}
-
-
-
-    
-    
 
