@@ -1,24 +1,27 @@
-# app.yaml
-# This is the master configuration file for the 'default' (frontend) service.
-# It defines the "Waiter" for our application.
+# frontend/app.yaml
+# This is the secure version of the frontend service configuration.
 
 runtime: custom
 env: flex
 
 # --- Environment Variables ---
-# These variables will be available to the frontend service.
+# These are variables that App Engine will provide to our running service.
 env_variables:
   GCP_PROJECT: ${GAE_PROJECT}
   GCP_REGION: 'us-central1'
   TASK_QUEUE: 'mastering-queue'
-  FIREBASE_CONFIG_JSON: '{"apiKey":"AIzaSyBO6LZGYTxX9xIcLaqSS-Owbm5KEbd_ivI","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:84cc7f1d1250a003554a06","measurementId":"G-QFXB5EMWDD"}'
+  # --- THIS IS THE FIX ---
+  # We are now passing the Firebase config via a SECURE build-time variable.
+  # This keeps the secret API key out of our source code.
+  FIREBASE_CONFIG_JSON: ${FIREBASE_CONFIG_JSON}
 
-# --- The "Waiter" (Frontend Service) ---
 service: default
-instance_class: F1 # A small, cost-effective instance for a lightweight UI server.
+instance_class: F1
 automatic_scaling:
-  # The Flexible Environment requires a minimum of 1 instance.
   min_num_instances: 1
   max_num_instances: 2
+
+
+
 
 
