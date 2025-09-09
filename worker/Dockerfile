@@ -1,11 +1,14 @@
 # Dockerfile for the Worker Service (The "Kitchen")
-# This is the final, clean version of the blueprint for our backend.
+# This is the final, corrected version of the blueprint for our backend.
 
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1
 ENV APP_HOME=/app
-WORKDIR 
+# --- THIS IS THE FIX ---
+# We are now using the explicit path, which is more robust.
+WORKDIR /app
+# --- END FIX ---
 
 # Install ffmpeg system dependency
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg &&     rm -rf /var/lib/apt/lists/*
