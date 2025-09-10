@@ -18,7 +18,6 @@ from google.cloud import firestore
 app = Flask(__name__, template_folder='templates')
 
 # --- GCP Client Caching ---
-# We use Flask's 'g' object to cache clients per-request for efficiency.
 def get_gcp_clients():
     if 'storage_client' not in g:
         g.storage_client = storage.Client()
@@ -27,9 +26,8 @@ def get_gcp_clients():
     return g.storage_client, g.tasks_client, g.db
 
 # --- Environment Variables ---
-# These are set automatically by the App Engine environment via app.yaml.
 GCP_PROJECT = os.environ.get('GCP_PROJECT')
-GCP_REGION = os.environ.get('GCP_REGION', 'us-central1') # Default for Cloud Tasks
+GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
 TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
 BUCKET_NAME = f"{GCP_PROJECT}.appspot.com" if GCP_PROJECT else None
 
@@ -37,18 +35,12 @@ BUCKET_NAME = f"{GCP_PROJECT}.appspot.com" if GCP_PROJECT else None
 @app.route('/')
 def index():
     """Serves the main web page."""
-    # Pass the Firebase config to the template. This is a secure way to
-    # make environment variables available to the client-side JavaScript.
     firebase_config = os.environ.get('FIREBASE_CONFIG_JSON')
     return render_template('index.html', firebase_config=firebase_config)
 
 # --- API Endpoints ---
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
-    """
-    Generates a secure, temporary URL for the browser to upload a file
-    directly to Google Cloud Storage.
-    """
     storage_client, _, _ = get_gcp_clients()
     data = request.get_json()
     if not data or 'filename' not in data:
@@ -78,10 +70,6 @@ def generate_upload_url():
 
 @app.route('/start-processing', methods=['POST'])
 def start_processing():
-    """
-    Kicks off the entire backend workflow by creating a Firestore document
-    and a Cloud Task.
-    """
     _, tasks_client, db = get_gcp_clients()
     data = request.get_json()
     if not data or 'gcs_uri' not in data or 'settings' not in data:
@@ -90,7 +78,6 @@ def start_processing():
     job_id = str(uuid.uuid4())
     
     try:
-        # Create the job "status board" document in Firestore
         job_ref = db.collection('mastering_jobs').document(job_id)
         job_ref.set({
             'status': 'Job created. Waiting for worker...',
@@ -100,7 +87,6 @@ def start_processing():
             'settings': data['settings']
         })
 
-        # Create the "order ticket" and send it to the Cloud Tasks queue
         queue_path = tasks_client.queue_path(GCP_PROJECT, GCP_REGION, TASK_QUEUE)
         
         task_payload = {
@@ -131,9 +117,6 @@ def start_processing():
 
 @app.route('/get-signed-download-url', methods=['POST'])
 def get_signed_download_url():
-    """
-    Provides a temporary, secure download link for a finished file in GCS.
-    """
     storage_client, _, _ = get_gcp_clients()
     data = request.get_json()
     gcs_path = data.get('gcs_path')
@@ -159,7 +142,5 @@ def get_signed_download_url():
         return jsonify({"error": "Could not generate download URL"}), 500
 
 if __name__ == "__main__":
-    # This block is for local testing and is ignored by App Engine.
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=PORT, debug=True)
-
