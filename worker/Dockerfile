@@ -1,4 +1,5 @@
 # Dockerfile for the Worker Service (The "Kitchen")
+# Final version with the correct, hardcoded port for App Engine Flex.
 
 FROM python:3.11-slim
 
@@ -11,8 +12,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg &&     r
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all necessary application code from the current context
 COPY main.py .
 COPY shared/ ./shared
 
-CMD gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
+# --- THIS IS THE FIX ---
+# We use the exec form and hardcode the port to 8080.
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "main:app"]
