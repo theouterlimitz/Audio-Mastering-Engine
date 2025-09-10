@@ -1,5 +1,5 @@
 # Dockerfile for the Worker Service (The "Kitchen")
-# Final version with corrected relative paths for the build context.
+# Final version with a more robust CMD instruction.
 
 FROM python:3.11-slim
 
@@ -9,15 +9,12 @@ WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg &&     rm -rf /var/lib/apt/lists/*
 
-# The build context is the worker/ folder, so we copy directly.
-COPY requirements.txt .
+COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the worker's own main file.
-COPY main.py .
+COPY worker/ ./worker
+COPY worker/shared/ ./shared
 
-# Copy the worker's own copy of the shared engine.
-COPY shared/ ./shared
-
-# The CMD is unchanged.
-CMD exec gunicorn --bind : --workers 1 --threads 8 --timeout 0 main:app
+# --- THIS IS THE FIX ---
+# Removed 'exec' for more reliable shell variable expansion.
+CMD gunicorn --bind : --workers 1 --threads 8 --timeout 0 worker.main:app
