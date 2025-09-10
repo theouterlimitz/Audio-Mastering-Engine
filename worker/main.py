@@ -98,5 +98,41 @@ def process_gcs_file(job_data, job_ref):
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=PORT, debug=True)
+```
+
+**3. Update the Blueprints (`Dockerfile`s) to Use the New Name:**
+* **Update the Frontend Dockerfile:**
+    ```bash
+    cat << EOF > frontend/Dockerfile
+    # Dockerfile for the Frontend Service (The "Waiter")
+    FROM python:3.11-slim
+    ENV PYTHONUNBUFFERED=1
+    ENV APP_HOME=/app
+    WORKDIR /app
+    COPY requirements.txt .
+    RUN pip install --no-cache-dir -r requirements.txt
+    COPY main.py .
+    COPY templates/ ./templates
+    COPY static/ ./static
+    COPY app_shared/ ./app_shared
+    CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "main:app"]
+    EOF
+    ```
+* **Update the Worker Dockerfile:**
+    ```bash
+    cat << EOF > worker/Dockerfile
+    # Dockerfile for the Worker Service (The "Kitchen")
+    FROM python:3.11-slim
+    ENV PYTHONUNBUFFERED=1
+    ENV APP_HOME=/app
+    WORKDIR /app
+    RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg && rm -rf /var/lib/apt/lists/*
+    COPY requirements.txt .
+    RUN pip install --no-cache-dir -r requirements.txt
+    COPY main.py .
+    COPY app_shared/ ./app_shared
+    CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "1", "--threads", "8", "--timeout", "0", "main:app"]
+    EOF
+    
 
 
