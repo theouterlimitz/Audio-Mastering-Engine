@@ -1,100 +1,138 @@
-# worker/main.py
-# Final version with the correct, unambiguous import path.
+# frontend/main.py
+# Final version with the incorrect, unnecessary import removed.
+# The frontend's only job is to create a task; it does not need the engine.
 
 import os
-import sys
 import json
-import logging
-import tempfile
-from flask import Flask, request, jsonify
+import datetime
+import uuid
+from flask import Flask, render_template, request, jsonify, g
 
-# --- FIX: Import from our uniquely named shared directory ---
-from app_shared import audio_mastering_engine
+from google.cloud import storage, tasks_v2, firestore
 
-from google.cloud import firestore, storage
+app = Flask(__name__, template_folder='templates')
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-app = Flask(__name__)
+def get_gcp_clients():
+    if 'storage_client' not in g:
+        g.storage_client = storage.Client()
+        g.tasks_client = tasks_v2.CloudTasksClient()
+        g.db = firestore.Client()
+    return g.storage_client, g.tasks_client, g.db
 
-try:
-    db = firestore.Client()
-    storage_client = storage.Client()
-    GCP_PROJECT_ID = os.environ.get('GCP_PROJECT')
-    BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
-except Exception as e:
-    logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
-    db = None
-    storage_client = None
+GCP_PROJECT = os.environ.get('GCP_PROJECT')
+GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
+TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
+BUCKET_NAME = f"{GCP_PROJECT}.appspot.com" if GCP_PROJECT else None
 
-@app.route('/process-task', methods=['POST'])
-def process_task():
-    if not db or not storage_client:
-        logging.error("Worker is misconfigured; GCP clients not available.")
-        return "Internal Server Error: Misconfigured", 500
-    job_data = {}
-    try:
-        job_data = json.loads(request.data.decode('utf-8'))
-        job_id = job_data.get('job_id')
-        if not job_id:
-            logging.error("Received task with no job_id.")
-            return "Bad Request: Missing job_id", 400
-        job_ref = db.collection('mastering_jobs').document(job_id)
-        job_ref.update({'status': 'Processing audio master...', 'worker_received_at': firestore.SERVER_TIMESTAMP})
-        process_gcs_file(job_data, job_ref)
-        logging.info(f"Successfully completed job {job_id}.")
-        job_ref.update({'status': 'Complete', 'completed_at': firestore.SERVER_TIMESTAMP})
-        return "OK", 200
-    except Exception as e:
-        logging.exception(f"FATAL ERROR processing task.")
-        job_id = job_data.get('job_id')
-        if job_id:
-            job_ref = db.collection('mastering_jobs').document(job_id)
-            job_ref.update({'status': 'Error', 'error_message': str(e)})
-        return "OK", 200
+@app.route('/')
+def index():
+    firebase_config = os.environ.get('FIREBASE_CONFIG_JSON')
+    return render_template('index.html', firebase_config=firebase_config)
 
-def process_gcs_file(job_data, job_ref):
-    gcs_uri = job_data.get('gcs_uri')
-    if not gcs_uri: raise ValueError("gcs_uri not found in job data")
+@app.route('/generate-upload-url', methods=['POST'])
+def generate_upload_url():
+    storage_client, _, _ = get_gcp_clients()
+    data = request.get_json()
+    if not data or 'filename' not in data: return jsonify({"error": "Filename not provided"}), 400
+    if not BUCKET_NAME: return jsonify({"error": "Server not configured."}), 500
+    unique_id = uuid.uuid4().hex
+    original_filename = data['filename']
+    blob_name = f"raw_uploads/{unique_id}/{original_filename}"
     bucket = storage_client.bucket(BUCKET_NAME)
-    input_blob = bucket.blob(gcs_uri.replace(f"gs://{BUCKET_NAME}/", ""))
-    with tempfile.TemporaryDirectory() as temp_dir:
-        base_filename = os.path.basename(job_data['settings']['original_filename'])
-        name, _ = os.path.splitext(base_filename)
-        local_input_path = os.path.join(temp_dir, base_filename)
-        local_output_wav = os.path.join(temp_dir, f"{name}_mastered.wav")
-        logging.info(f"Downloading {gcs_uri} to {local_input_path}...")
-        input_blob.download_to_filename(local_input_path)
-        settings = job_data['settings']
-        settings['input_file'] = local_input_path
-        settings['output_file'] = local_output_wav
-        def update_status(message):
-            logging.info(f"Job {job_data['job_id']}: {message}")
-            job_ref.update({'status': message})
-        def update_progress(current, total):
-            progress = int((current / total) * 100) if total > 0 else 0
-            job_ref.update({'progress': progress})
-        def update_job_with_notes(note):
-            job_ref.update({'studio_notes': note})
-        audio_mastering_engine.process_audio(
-            settings, update_status, update_progress, 
-            lambda art_path: None,
-            update_job_with_notes
+    blob = bucket.blob(blob_name)
+    try:
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(minutes=15),
+            method="PUT",
+            content_type=data.get('contentType', 'application/octet-stream'),
         )
-        output_files_to_upload = {
-            'output_wav_uri': local_output_wav,
-            'output_mp3_uri': local_output_wav.replace('.wav', '.mp3'),
-            'output_art_uri': local_output_wav.replace('.wav', '_art.png')
+        gcs_uri = f"gs://{BUCKET_NAME}/{blob_name}"
+        return jsonify({"url": url, "gcs_uri": gcs_uri}), 200
+    except Exception as e:
+        app.logger.error(f"Error generating signed URL: {e}")
+        return jsonify({"error": "Could not generate upload URL."}), 500
+
+@app.route('/start-processing', methods=['POST'])
+def start_processing():
+    _, tasks_client, db = get_gcp_clients()
+    data = request.get_json()
+    if not data or 'gcs_uri' not in data or 'settings' not in data:
+        return jsonify({"error": "Missing GCS URI or settings"}), 400
+    job_id = str(uuid.uuid4())
+    try:
+        job_ref = db.collection('mastering_jobs').document(job_id)
+        job_ref.set({
+            'status': 'Job created. Waiting for worker...',
+            'created_at': firestore.SERVER_TIMESTAMP,
+            'progress': 0,
+            'original_filename': data['settings']['original_filename'],
+            'settings': data['settings']
+        })
+        queue_path = tasks_client.queue_path(GCP_PROJECT, GCP_REGION, TASK_QUEUE)
+        task_payload = {'job_id': job_id, 'gcs_uri': data['gcs_uri'], 'settings': data['settings']}
+        task = {
+            "app_engine_http_request": {
+                "http_method": tasks_v2.HttpMethod.POST,
+                "relative_uri": "/process-task",
+                "body": json.dumps(task_payload).encode('utf-8'),
+                "headers": {"Content-Type": "application/json"},
+                "app_engine_routing": {"service": "worker"}
+            }
         }
-        uploaded_paths = {}
-        for key, local_path in output_files_to_upload.items():
-            if os.path.exists(local_path):
-                gcs_path = f"processed/{job_data['job_id']}/{os.path.basename(local_path)}"
-                blob = bucket.blob(gcs_path)
-                logging.info(f"Uploading {local_path} to gs://{BUCKET_NAME}/{gcs_path}")
-                blob.upload_from_filename(local_path)
-                uploaded_paths[key] = f"gs://{BUCKET_NAME}/{gcs_path}"
-        job_ref.update(uploaded_paths)
+        tasks_client.create_task(parent=queue_path, task=task)
+        return jsonify({"job_id": job_id}), 200
+    except Exception as e:
+        app.logger.error(f"Error starting processing job {job_id}: {e}")
+        if 'job_ref' in locals():
+            job_ref.set({'status': 'Error', 'error_message': 'Failed to create task.'})
+        return jsonify({"error": "Could not start processing job."}), 500
+
+@app.route('/get-signed-download-url', methods=['POST'])
+def get_signed_download_url():
+    storage_client, _, _ = get_gcp_clients()
+    data = request.get_json()
+    gcs_path = data.get('gcs_path')
+    if not gcs_path: return jsonify({"error": "GCS path not provided"}), 400
+    try:
+        blob_name = gcs_path.replace(f"gs://{BUCKET_NAME}/", "")
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(blob_name)
+        if not blob.exists(): return jsonify({"error": "File not found"}), 404
+        url = blob.generate_signed_url(version="v4", expiration=datetime.timedelta(hours=1), method="GET")
+        return jsonify({"url": url}), 200
+    except Exception as e:
+        app.logger.error(f"Error generating download URL for {gcs_path}: {e}")
+        return jsonify({"error": "Could not generate download URL"}), 500
 
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=PORT, debug=True)
+```
+
+**2. Update the Frontend's Blueprint (`frontend/Dockerfile`):**
+Now that the waiter no longer needs to be a chef, we can remove the unnecessary delivery of the heavy kitchen equipment to its workshop.
+
+```bash
+cat << EOF > frontend/Dockerfile
+# Dockerfile for the Frontend Service (The "Waiter")
+# Final version, now fully decoupled and lightweight.
+
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1
+ENV APP_HOME=/app
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# --- FIX: No longer copies the heavy shared engine ---
+COPY main.py .
+COPY templates/ ./templates
+COPY static/ ./static
+
+CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "main:app"]
+EOF
+
+
