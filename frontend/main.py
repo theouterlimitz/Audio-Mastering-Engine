@@ -1,55 +1,85 @@
 # frontend/main.py
 # This is the final, fully-corrected version of the frontend service.
-# It includes proper Google Cloud Logging and the definitive fix for the
-# signed URL "private key" error.
+# It uses a robust, explicit initialization pattern with @app.before_first_request
+# to guarantee the private key from Secret Manager is used.
 
 import os
 import uuid
 import json
 import logging
+import google.auth
+from google.oauth2 import service_account
 from flask import Flask, render_template, request, jsonify
 
-# Import the Google Cloud Logging library
+# Import the necessary Google Cloud libraries
 import google.cloud.logging
+from google.cloud import firestore, storage, tasks_v2, secretmanager
 
-from google.cloud import firestore, storage, tasks_v2
+# --- THIS IS THE DEFINITIVE FIX ---
 
-# Instantiate a client for Google Cloud Logging.
-# This configures the root logger to correctly send all logs,
-# including their severity levels, to the Cloud Logging API.
+# 1. Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
 
 app = Flask(__name__)
 
-try:
-    # These clients will automatically use the service account
-    # assigned to the App Engine instance.
-    db = firestore.Client()
-    storage_client = storage.Client()
-    tasks_client = tasks_v2.CloudTasksClient()
-    
-    # Automatically determine the project ID from the environment
-    GCP_PROJECT_ID = storage_client.project
-    # The default App Engine bucket name is always [PROJECT_ID].appspot.com
-    BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
-    
-    GCP_REGION = os.environ.get('GCP_REGION', 'us-central1') 
-    TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
-    
-    TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
-    
-    # When running on App Engine, this environment variable will contain the email
-    # of the service account the instance is running as.
-    SERVICE_ACCOUNT_EMAIL = os.environ.get('GAE_SERVICE_ACCOUNT_EMAIL')
-    if not SERVICE_ACCOUNT_EMAIL:
-        # Fallback for local development or if the env var isn't set
-        SERVICE_ACCOUNT_EMAIL = f'{GCP_PROJECT_ID}@appspot.gserviceaccount.com'
+# 2. Define global variables for our clients. They start as None.
+db = None
+storage_client = None
+tasks_client = None
+GCP_PROJECT_ID = None
+BUCKET_NAME = None
+TASK_QUEUE_PATH = None
+SERVICE_ACCOUNT_EMAIL = None
 
+# 3. Use Flask's `@app.before_first_request` decorator.
+# This function will run exactly ONCE when the first request comes in.
+# It's the perfect, most reliable place to initialize our clients.
+@app.before_first_request
+def initialize_clients():
+    """
+    Fetches the service account key from Secret Manager and initializes
+    all Google Cloud clients. This function is critical for ensuring
+    we use key-based authentication.
+    """
+    # Make our global variables modifiable within this function
+    global db, storage_client, tasks_client, GCP_PROJECT_ID, BUCKET_NAME, TASK_QUEUE_PATH, SERVICE_ACCOUNT_EMAIL
 
-except Exception as e:
-    logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
-    db, storage_client, tasks_client = None, None, None
+    try:
+        secret_id = os.environ.get("SA_KEY_SECRET_ID")
+        if not secret_id:
+            logging.critical("FATAL: SA_KEY_SECRET_ID environment variable not set.")
+            return
+
+        # Initialize the Secret Manager client to fetch the key
+        secret_client = secretmanager.SecretManagerServiceClient()
+        response = secret_client.access_secret_version(name=secret_id)
+        secret_json_string = response.payload.data.decode("UTF-8")
+        secret_info = json.loads(secret_json_string)
+        
+        # Create credentials EXPLICITLY from the fetched private key
+        credentials = service_account.Credentials.from_service_account_info(secret_info)
+        
+        # Now, create all other clients using these explicit, key-based credentials
+        GCP_PROJECT_ID = credentials.project_id
+        db = firestore.Client(project=GCP_PROJECT_ID, credentials=credentials)
+        storage_client = storage.Client(project=GCP_PROJECT_ID, credentials=credentials)
+        tasks_client = tasks_v2.CloudTasksClient(credentials=credentials)
+        
+        # Configure other necessary variables
+        BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
+        GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
+        TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
+        TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
+        SERVICE_ACCOUNT_EMAIL = credentials.service_account_email
+
+        logging.info("Successfully initialized all GCP clients using the service account key.")
+
+    except Exception:
+        logging.exception("FATAL: A critical error occurred during client initialization.")
+
+# --- END FIX ---
+
 
 @app.route('/')
 def index():
@@ -59,13 +89,12 @@ def index():
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     if not storage_client:
-        logging.error("Server is not configured correctly.")
-        return jsonify({"error": "Server is not configured correctly."}), 500
+        logging.error("Server is not configured correctly; storage_client is None.")
+        return jsonify({"error": "Configuration error. Please check logs."}), 500
 
     data = request.get_json()
     filename = data.get('filename')
     if not filename:
-        logging.warning("Filename not provided.")
         return jsonify({"error": "Filename not provided."}), 400
 
     unique_id = uuid.uuid4().hex
@@ -75,32 +104,24 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
-        # --- THIS IS THE FINAL FIX ---
-        # We REMOVE the explicit 'service_account_email' parameter.
-        # This forces the library to use the IAM Credentials API to sign the URL
-        # using the service account the application is running as, which is the
-        # correct and modern authentication flow. The previous 'private key'
-        # error was caused by explicitly passing the email, which confused the
-        # library into trying an older, key-based signing method.
+        # This call will now succeed because 'storage_client' was created
+        # with credentials that are guaranteed to contain the private key.
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=3600, # 1 hour
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream')
         )
-        # --- END FIX ---
-        
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception as e:
-        # This will no longer be triggered, but we leave it for safety.
-        logging.exception("Error generating signed URL")
+        logging.exception("CRITICAL: Signed URL generation failed even with explicit key.")
         return jsonify({"error": "Could not generate upload URL."}), 500
 
 @app.route('/submit-job', methods=['POST'])
 def submit_job():
-    if not all([db, tasks_client]):
-        logging.error("Server is not configured correctly.")
-        return jsonify({"error": "Server is not configured correctly."}), 500
+    if not all([db, tasks_client, TASK_QUEUE_PATH, GCP_PROJECT_ID, GCP_REGION, SERVICE_ACCOUNT_EMAIL]):
+        logging.error("Server is not configured correctly; one or more clients/variables are None.")
+        return jsonify({"error": "Configuration error. Please check logs."}), 500
 
     job_data = request.get_json()
     
@@ -113,8 +134,6 @@ def submit_job():
         'gcs_uri': job_data.get('gcs_uri')
     })
 
-    # This task will be sent to the worker service. The OIDC token
-    # uses the service account identity to securely authenticate the request.
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
@@ -134,3 +153,4 @@ def submit_job():
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=PORT, debug=True)
+
