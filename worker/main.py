@@ -1,5 +1,6 @@
 # worker/main.py
 # This is the final, clean, and correct version of the worker application.
+# Includes the health check route for App Engine.
 
 import os
 import sys
@@ -25,6 +26,15 @@ except Exception as e:
     logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
     db = None
     storage_client = None
+
+# --- THIS IS THE FIX ---
+# This route responds to App Engine's health checks. Without it,
+# the deployment will fail because App Engine thinks the app is unhealthy.
+@app.route('/')
+def health_check():
+    """App Engine health check"""
+    return "OK", 200
+# --- END FIX ---
 
 @app.route('/process-task', methods=['POST'])
 def process_task():
