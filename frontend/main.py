@@ -14,7 +14,7 @@ from flask import Flask, render_template, request, jsonify
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
 # --- THIS IS THE CORRECT IMPORT ---
-from google.cloud import secretmanager
+
 # --- END CORRECT IMPORT ---
 
 # Setup proper cloud logging immediately.
