@@ -1,6 +1,7 @@
 # audio_mastering_engine.py (v7.1 - Definitive Golden Master)
 # This is the single, complete, and final version of the engine,
-# incorporating all successful bug fixes and features.
+# incorporating all successful bug fixes and features, including the
+# critical relative import for cloud deployment.
 
 import os
 import tempfile
@@ -25,7 +26,7 @@ except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
     google, vertexai = None, None
 
-# --- THIS IS THE FIX ---
+# --- THIS IS THE FINAL FIX ---
 # The '.' tells Python to look for ai_tagger in the same directory (the 'app_shared' package).
 from . import ai_tagger
 # --- END FIX ---
@@ -312,3 +313,4 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
+
