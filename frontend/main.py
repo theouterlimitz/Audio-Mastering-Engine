@@ -1,5 +1,6 @@
 # frontend/main.py
-# This version contains the final, definitive fix for the signed URL generation.
+# This version integrates the official Google Cloud Logging library
+# to ensure all errors are correctly reported.
 
 import os
 import uuid
@@ -7,9 +8,19 @@ import json
 import logging
 from flask import Flask, render_template, request, jsonify
 
+# Import the Google Cloud Logging library
+import google.cloud.logging
+
 from google.cloud import firestore, storage, tasks_v2
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# --- THIS IS THE FIX ---
+# Instantiate a client for Google Cloud Logging.
+# This simple line configures the root logger to send all logs,
+# including their correct severity levels, to the Cloud Logging API.
+logging_client = google.cloud.logging.Client()
+logging_client.setup_logging()
+# --- END FIX ---
+
 app = Flask(__name__)
 
 try:
@@ -25,10 +36,10 @@ try:
     
     TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
     
-    # Get the service account email from the environment, falling back to the new one
     SERVICE_ACCOUNT_EMAIL = os.environ.get('GAE_SERVICE_ACCOUNT_EMAIL', 'synesthesia-frontend-sa@mastering-engine-v4.iam.gserviceaccount.com')
 
 except Exception as e:
+    # Use the standard logger; the setup will route this correctly.
     logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
     db, storage_client, tasks_client = None, None, None
 
@@ -40,11 +51,13 @@ def index():
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     if not storage_client:
+        logging.error("Server is not configured correctly.")
         return jsonify({"error": "Server is not configured correctly."}), 500
 
     data = request.get_json()
     filename = data.get('filename')
     if not filename:
+        logging.warning("Filename not provided.")
         return jsonify({"error": "Filename not provided."}), 400
 
     unique_id = uuid.uuid4().hex
@@ -56,22 +69,21 @@ def generate_upload_url():
     try:
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=3600, # 1 hour
+            expiration=3600,
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream'),
-            # --- THIS IS THE FINAL FIX ---
-            # Explicitly tell the library which service account to use for signing.
             service_account_email=SERVICE_ACCOUNT_EMAIL
-            # --- END FIX ---
         )
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception as e:
+        # Now, this line will produce a full, detailed traceback in Logs Explorer with ERROR severity.
         logging.exception("Error generating signed URL")
         return jsonify({"error": "Could not generate upload URL."}), 500
 
 @app.route('/submit-job', methods=['POST'])
 def submit_job():
     if not all([db, tasks_client]):
+        logging.error("Server is not configured correctly.")
         return jsonify({"error": "Server is not configured correctly."}), 500
 
     job_data = request.get_json()
