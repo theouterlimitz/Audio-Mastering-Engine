@@ -25,12 +25,13 @@ except ImportError:
     print("WARNING: Google Cloud libraries not found. AI Art generation will be disabled.")
     google, vertexai = None, None
 
-# --- The final, correct relative import ---
+# --- THIS IS THE FIX ---
+# The '.' tells Python to look for ai_tagger in the same directory (the 'app_shared' package).
 from . import ai_tagger
+# --- END FIX ---
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - [%(funcName)s] - %(message)s')
 
-# --- The complete EQ_PRESETS dictionary, restored ---
 EQ_PRESETS = {
     "Vocal Clarity": {"bass_boost": -1.0, "mid_cut": 2.0, "presence_boost": 2.5, "treble_boost": 1.0},
     "Bass Punch": {"bass_boost": 2.5, "mid_cut": 1.0, "presence_boost": -1.0, "treble_boost": 0.5},
@@ -39,7 +40,6 @@ EQ_PRESETS = {
     "EDM Kick & Highs": {"bass_boost": 2.0, "mid_cut": 4.0, "presence_boost": 1.0, "treble_boost": 3.0}
 }
 
-# --- The complete PROMPT_LIBRARY for the internal Art Director ---
 PROMPT_LIBRARY = {
     'mood': {
         'Happy/Excited': ['joyful abstract expressionism', 'vibrant digital art', 'ecstatic motion', 'radiant warmth'],
@@ -64,19 +64,16 @@ PROMPT_LIBRARY = {
     }
 }
 
-
 def generate_creative_prompt(tech_brief):
     logging.info(f"Building creative prompt from brief: {tech_brief}")
     try:
         mood_key = str(tech_brief['mood'])
         raw_tempo_key = tech_brief['tempo'].split(' ')[-1]
         tempo_key = ''.join(filter(str.isalpha, raw_tempo_key))
-        
         mood_style = random.choice(PROMPT_LIBRARY['mood'][mood_key])
         brightness_desc = random.choice(PROMPT_LIBRARY['brightness'][tech_brief['brightness']])
         density_desc = random.choice(PROMPT_LIBRARY['density'][tech_brief['density']])
         tempo_desc = random.choice(PROMPT_LIBRARY['tempo'][tempo_key])
-
         creative_prompt = f"An award-winning piece of {mood_style}, {brightness_desc}, featuring {density_desc} and {tempo_desc}."
         logging.info(f"Generated creative prompt: '{creative_prompt}'")
         return creative_prompt
@@ -86,7 +83,6 @@ def generate_creative_prompt(tech_brief):
     except Exception as e:
         logging.exception("Error building creative prompt. Falling back.")
         return f"An artistic representation of the mood: {tech_brief.get('mood', 'unknown')}, detailed, vibrant colors."
-
 
 def process_audio(settings, status_callback, progress_callback, art_callback, tag_callback):
     try:
@@ -133,7 +129,6 @@ def process_audio(settings, status_callback, progress_callback, art_callback, ta
         art_callback(None)
         tag_callback("Processing failed.")
 
-
 def export_to_mp3(input_wav_path, status_callback):
     if not input_wav_path or not os.path.exists(input_wav_path):
         logging.warning("Input WAV file not found for MP3 conversion."); status_callback("Warning: Could not find master WAV to create MP3."); return
@@ -145,7 +140,6 @@ def export_to_mp3(input_wav_path, status_callback):
         subprocess.run(mp3_command, check=True, capture_output=True, text=True)
         logging.info("MP3 export successful."); status_callback("High-quality MP3 created successfully.")
     except Exception: logging.exception("Error during MP3 export."); status_callback("Error: Failed to create MP3 file.")
-
 
 def generate_cover_art_locally(prompt, audio_output_path):
     if not vertexai: raise RuntimeError("Vertex AI library is not available.")
@@ -167,7 +161,6 @@ def generate_cover_art_locally(prompt, audio_output_path):
         return image_output_path
     except Exception as e:
         logging.exception("CRITICAL ERROR during local art generation."); raise e
-
 
 def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callback):
     input_file, output_file = settings.get("input_file"), settings.get("output_file")
@@ -226,7 +219,6 @@ def process_audio_with_ffmpeg_pipeline(settings, status_callback, progress_callb
         logging.info(f"Finished FFmpeg pipeline, exported to {output_file}")
         return output_file
 
-
 def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=-14.0):
     try:
         command_pass1 = ['ffmpeg', '-i', input_path, '-af', f'loudnorm=I={target_lufs}:TP=-1.5:LRA=11:print_format=json', '-f', 'null', '-']
@@ -248,23 +240,19 @@ def normalize_loudness_on_disk_with_ffmpeg(input_path, output_path, target_lufs=
         if isinstance(e, subprocess.CalledProcessError): logging.error(f"FFMPEG STDERR:\n{e.stderr}")
         subprocess.run(['cp', input_path, output_path], check=True); return output_path
 
-
 def log_memory_usage(stage=""):
     mem_info = psutil.Process(os.getpid()).memory_info()
     logging.info(f"MEMORY USAGE at '{stage}': {mem_info.rss / 1024 ** 2:.2f} MB")
-
 
 def audio_segment_to_float_array(audio_segment):
     samples = np.array(audio_segment.get_array_of_samples())
     if audio_segment.channels == 2: samples = samples.reshape((-1, 2))
     return samples.astype(np.float32) / (2**(audio_segment.sample_width * 8 - 1))
 
-
 def float_array_to_audio_segment(float_array, audio_segment_template):
     clipped_array = np.clip(float_array, -1.0, 1.0)
     int_array = (clipped_array * 32767).astype(np.int16)
     return audio_segment_template._spawn(int_array.tobytes())
-
 
 def apply_analog_character(chunk, character_percent):
     if character_percent == 0: return chunk
@@ -276,20 +264,17 @@ def apply_analog_character(chunk, character_percent):
     final_samples = apply_shelf_filter(saturated_samples, chunk.frame_rate, 12000, character_factor * 1.5, 'high')
     return float_array_to_audio_segment(final_samples, chunk)
 
-
 def apply_stereo_width(samples, width_factor):
     if samples.ndim != 2 or samples.shape[1] != 2: return samples
     left, right = samples[:, 0], samples[:, 1]; mid, side = (left + right) / 2, (left - right) / 2
     side *= width_factor; new_left, new_right = np.clip(mid + side, -1.0, 1.0), np.clip(mid - side, -1.0, 1.0)
     return np.stack([new_left, new_right], axis=1)
 
-
 def apply_eq_to_samples(samples, sample_rate, settings):
     if samples.ndim == 2:
         for i in range(samples.shape[1]): samples[:, i] = _apply_eq_to_channel(samples[:, i], sample_rate, settings)
     else: samples = _apply_eq_to_channel(samples, sample_rate, settings)
     return samples
-
 
 def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     channel_samples = apply_shelf_filter(channel_samples, sample_rate, 250, settings.get("bass_boost", 0.0), 'low')
@@ -298,7 +283,6 @@ def _apply_eq_to_channel(channel_samples, sample_rate, settings):
     channel_samples = apply_shelf_filter(channel_samples, sample_rate, 8000, settings.get("treble_boost", 0.0), 'high')
     return channel_samples
 
-
 def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type):
     if gain_db == 0.0: return samples
     b, a = butter(2, cutoff_hz / (0.5 * sample_rate), btype=filter_type)
@@ -306,7 +290,6 @@ def apply_shelf_filter(samples, sample_rate, cutoff_hz, gain_db, filter_type):
     gain = 10.0 ** (gain_db / 20.0)
     if gain_db > 0: return samples + (y - samples) * (gain - 1)
     else: return samples * gain + (y - samples * gain)
-
 
 def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     if gain_db == 0: return samples
@@ -317,7 +300,6 @@ def apply_peak_filter(samples, sample_rate, center_hz, gain_db, q=1.41):
     sos = butter(4, [low, high], btype='bandpass', output='sos'); filtered_band = sosfilt(sos, samples)
     gain_factor = 10 ** (gain_db / 20.0)
     return samples + (filtered_band * (gain_factor - 1))
-
 
 def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossover=4000):
     samples = audio_segment_to_float_array(chunk)
@@ -330,4 +312,3 @@ def apply_multiband_compressor(chunk, settings, low_crossover=250, high_crossove
     mid_compressed = compress_dynamic_range(mid_band_chunk, threshold=settings.get("mid_thresh"), ratio=settings.get("mid_ratio"))
     high_compressed = compress_dynamic_range(high_band_chunk, threshold=settings.get("high_thresh"), ratio=settings.get("high_ratio"))
     return low_compressed.overlay(mid_compressed).overlay(high_compressed)
-
