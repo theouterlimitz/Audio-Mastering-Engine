@@ -1,7 +1,6 @@
 # frontend/main.py
 # This is the final, fully-corrected version of the frontend service.
-# It uses a robust, explicit initialization pattern with @app.before_first_request
-# to guarantee the private key from Secret Manager is used.
+# It includes the corrected import statement for the Secret Manager client.
 
 import os
 import uuid
@@ -13,17 +12,20 @@ from flask import Flask, render_template, request, jsonify
 
 # Import the necessary Google Cloud libraries
 import google.cloud.logging
-from google.cloud import firestore, storage, tasks_v2, secretmanager
+from google.cloud import firestore, storage, tasks_v2
+# --- THIS IS THE FINAL FIX ---
+# The Secret Manager client has its own import statement.
+from google.cloud import secretmanager
+# --- END FIX ---
 
-# --- THIS IS THE DEFINITIVE FIX ---
 
-# 1. Setup proper cloud logging immediately.
+# Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
 
 app = Flask(__name__)
 
-# 2. Define global variables for our clients. They start as None.
+# Define global variables for our clients. They start as None.
 db = None
 storage_client = None
 tasks_client = None
@@ -32,9 +34,8 @@ BUCKET_NAME = None
 TASK_QUEUE_PATH = None
 SERVICE_ACCOUNT_EMAIL = None
 
-# 3. Use Flask's `@app.before_first_request` decorator.
+# Use Flask's `@app.before_first_request` decorator.
 # This function will run exactly ONCE when the first request comes in.
-# It's the perfect, most reliable place to initialize our clients.
 @app.before_first_request
 def initialize_clients():
     """
@@ -78,8 +79,6 @@ def initialize_clients():
     except Exception:
         logging.exception("FATAL: A critical error occurred during client initialization.")
 
-# --- END FIX ---
-
 
 @app.route('/')
 def index():
@@ -104,8 +103,6 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
-        # This call will now succeed because 'storage_client' was created
-        # with credentials that are guaranteed to contain the private key.
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=3600, # 1 hour
