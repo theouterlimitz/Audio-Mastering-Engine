@@ -17,3 +17,5 @@ COPY static/ ./static
 COPY app_shared/ ./app_shared
 
 CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "main:app"]
+
+#forcing stale cache rebuild
