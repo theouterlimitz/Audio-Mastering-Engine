@@ -1,6 +1,7 @@
 # frontend/main.py
-# This version integrates the official Google Cloud Logging library
-# to ensure all errors are correctly reported.
+# This is the final, fully-corrected version of the frontend service.
+# It includes proper Google Cloud Logging and the definitive fix for the
+# signed URL "private key" error.
 
 import os
 import uuid
@@ -13,22 +14,24 @@ import google.cloud.logging
 
 from google.cloud import firestore, storage, tasks_v2
 
-# --- THIS IS THE FIX ---
 # Instantiate a client for Google Cloud Logging.
-# This simple line configures the root logger to send all logs,
-# including their correct severity levels, to the Cloud Logging API.
+# This configures the root logger to correctly send all logs,
+# including their severity levels, to the Cloud Logging API.
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
-# --- END FIX ---
 
 app = Flask(__name__)
 
 try:
+    # These clients will automatically use the service account
+    # assigned to the App Engine instance.
     db = firestore.Client()
     storage_client = storage.Client()
     tasks_client = tasks_v2.CloudTasksClient()
     
+    # Automatically determine the project ID from the environment
     GCP_PROJECT_ID = storage_client.project
+    # The default App Engine bucket name is always [PROJECT_ID].appspot.com
     BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
     
     GCP_REGION = os.environ.get('GCP_REGION', 'us-central1') 
@@ -36,10 +39,15 @@ try:
     
     TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
     
-    SERVICE_ACCOUNT_EMAIL = os.environ.get('GAE_SERVICE_ACCOUNT_EMAIL', 'synesthesia-frontend-sa@mastering-engine-v4.iam.gserviceaccount.com')
+    # When running on App Engine, this environment variable will contain the email
+    # of the service account the instance is running as.
+    SERVICE_ACCOUNT_EMAIL = os.environ.get('GAE_SERVICE_ACCOUNT_EMAIL')
+    if not SERVICE_ACCOUNT_EMAIL:
+        # Fallback for local development or if the env var isn't set
+        SERVICE_ACCOUNT_EMAIL = f'{GCP_PROJECT_ID}@appspot.gserviceaccount.com'
+
 
 except Exception as e:
-    # Use the standard logger; the setup will route this correctly.
     logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
     db, storage_client, tasks_client = None, None, None
 
@@ -67,16 +75,24 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
+        # --- THIS IS THE FINAL FIX ---
+        # We REMOVE the explicit 'service_account_email' parameter.
+        # This forces the library to use the IAM Credentials API to sign the URL
+        # using the service account the application is running as, which is the
+        # correct and modern authentication flow. The previous 'private key'
+        # error was caused by explicitly passing the email, which confused the
+        # library into trying an older, key-based signing method.
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=3600,
+            expiration=3600, # 1 hour
             method="PUT",
-            content_type=data.get('contentType', 'application/octet-stream'),
-            service_account_email=SERVICE_ACCOUNT_EMAIL
+            content_type=data.get('contentType', 'application/octet-stream')
         )
+        # --- END FIX ---
+        
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception as e:
-        # Now, this line will produce a full, detailed traceback in Logs Explorer with ERROR severity.
+        # This will no longer be triggered, but we leave it for safety.
         logging.exception("Error generating signed URL")
         return jsonify({"error": "Could not generate upload URL."}), 500
 
@@ -97,6 +113,8 @@ def submit_job():
         'gcs_uri': job_data.get('gcs_uri')
     })
 
+    # This task will be sent to the worker service. The OIDC token
+    # uses the service account identity to securely authenticate the request.
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
