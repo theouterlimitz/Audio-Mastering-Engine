@@ -1,4 +1,5 @@
 # Dockerfile for the Worker Service (The "Kitchen")
+# Final version for a self-contained service.
 
 FROM python:3.11-slim
 

@@ -1,4 +1,5 @@
 # Dockerfile for the Frontend Service (The "Waiter")
+# Final version for a self-contained service.
 
 FROM python:3.11-slim
 
