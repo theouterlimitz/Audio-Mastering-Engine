@@ -1,23 +1,25 @@
 # frontend/app.yaml
-# This is the secure version of the frontend service configuration.
-# It now contains the new, correct, and restricted Firebase config.
+# This version assigns a new, dedicated service account to bypass
+# any issues with the default account and ensure clean permissions.
 
 runtime: custom
 env: flex
+service: default
+
+# --- THIS IS THE FIX ---
+# Assigns a new, clean service account with the exact permissions needed.
+service_account: synesthesia-frontend-sa@mastering-engine-v4.iam.gserviceaccount.com
+# --- END FIX ---
 
 # --- Environment Variables ---
 # These are variables that App Engine will provide to our running service.
 env_variables:
-  GCP_PROJECT: ${GAE_PROJECT}
   GCP_REGION: 'us-central1'
   TASK_QUEUE: 'mastering-queue'
   # --- THIS IS THE FINAL, CORRECT CONFIGURATION ---
   FIREBASE_CONFIG_JSON: '{"apiKey":"API KEY","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
 
-service: default
 instance_class: F1
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 2
-
-

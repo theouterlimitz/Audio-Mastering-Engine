@@ -1,5 +1,5 @@
 # frontend/main.py
-# This is the final, corrected version with the robust bucket name fix.
+# This version contains the final, definitive fix for the signed URL generation.
 
 import os
 import uuid
@@ -12,17 +12,12 @@ from google.cloud import firestore, storage, tasks_v2
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 app = Flask(__name__)
 
-# --- THIS IS THE FIX ---
-# Let the client libraries automatically detect the project ID and default bucket.
-# This is the recommended and most reliable way.
 try:
     db = firestore.Client()
     storage_client = storage.Client()
     tasks_client = tasks_v2.CloudTasksClient()
     
-    # Automatically determine the project ID from the environment
     GCP_PROJECT_ID = storage_client.project
-    # The default App Engine bucket name is always [PROJECT_ID].appspot.com
     BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
     
     GCP_REGION = os.environ.get('GCP_REGION', 'us-central1') 
@@ -30,14 +25,15 @@ try:
     
     TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
     
+    # Get the service account email from the environment, falling back to the new one
+    SERVICE_ACCOUNT_EMAIL = os.environ.get('GAE_SERVICE_ACCOUNT_EMAIL', 'synesthesia-frontend-sa@mastering-engine-v4.iam.gserviceaccount.com')
+
 except Exception as e:
     logging.critical(f"FATAL: Could not initialize GCP clients: {e}")
     db, storage_client, tasks_client = None, None, None
-# --- END FIX ---
 
 @app.route('/')
 def index():
-    # Pass the Firebase config to the frontend template
     firebase_config = os.environ.get('FIREBASE_CONFIG_JSON')
     return render_template('index.html', firebase_config=firebase_config)
 
@@ -51,7 +47,6 @@ def generate_upload_url():
     if not filename:
         return jsonify({"error": "Filename not provided."}), 400
 
-    # Sanitize and create a unique blob name
     unique_id = uuid.uuid4().hex
     blob_name = f"uploads/{unique_id}/{filename}"
     
@@ -59,12 +54,15 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
-        # Generate a signed URL for the client to upload the file directly
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=3600, # 1 hour
             method="PUT",
-            content_type=data.get('contentType', 'application/octet-stream')
+            content_type=data.get('contentType', 'application/octet-stream'),
+            # --- THIS IS THE FINAL FIX ---
+            # Explicitly tell the library which service account to use for signing.
+            service_account_email=SERVICE_ACCOUNT_EMAIL
+            # --- END FIX ---
         )
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception as e:
@@ -78,7 +76,6 @@ def submit_job():
 
     job_data = request.get_json()
     
-    # Create a job document in Firestore
     job_ref = db.collection('mastering_jobs').document()
     job_data['job_id'] = job_ref.id
     job_ref.set({
@@ -88,13 +85,12 @@ def submit_job():
         'gcs_uri': job_data.get('gcs_uri')
     })
 
-    # Create a task to be sent to the worker service
     task = {
         "http_request": {
             "http_method": tasks_v2.HttpMethod.POST,
             "url": f"https://worker-dot-{GCP_PROJECT_ID}.{GCP_REGION}.r.appspot.com/process-task",
             "oidc_token": {
-                "service_account_email": f"{GCP_PROJECT_ID}@appspot.gserviceaccount.com"
+                "service_account_email": SERVICE_ACCOUNT_EMAIL
             },
             "headers": {"Content-type": "application/json"},
             "body": json.dumps(job_data).encode()
