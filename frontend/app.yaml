@@ -1,24 +1,24 @@
 # frontend/app.yaml
-# This version assigns the new service account AND provides the ID
-# of the secret containing its private key.
+# THIS IS THE FINAL, FULLY-CORRECTED CONFIGURATION
+# It creates a new 'frontend' service to ensure a clean slate.
 
 runtime: custom
 env: flex
-service: default
+service: frontend
 
+# Assigns the clean service account we created with all necessary permissions.
 service_account: synesthesia-frontend-sa@mastering-engine-v4.iam.gserviceaccount.com
 
+# Environment variables for the application.
 env_variables:
   GCP_REGION: 'us-central1'
   TASK_QUEUE: 'mastering-queue'
-  FIREBASE_CONFIG_JSON: '{"apiKey":"API KEY","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
-  # --- THIS IS THE FIX ---
-  # Provides the full resource name of the secret we created.
+  # This provides the full path to the secret we created.
   SA_KEY_SECRET_ID: 'projects/mastering-engine-v4/secrets/frontend-sa-key/versions/latest'
-  # --- END FIX ---
+  # This provides the configuration for the client-side Firebase SDK.
+  FIREBASE_CONFIG_JSON: '{"apiKey":"API KEY","authDomain":"mastering-engine-v4.firebaseapp.com","projectId":"mastering-engine-v4","storageBucket":"mastering-engine-v4.firebasestorage.app","messagingSenderId":"638532886643","appId":"1:638532886643:web:c00a2b258f864bb8554a06","measurementId":"G-6Y1H6K7HEE"}'
 
 instance_class: F1
 automatic_scaling:
   min_num_instances: 1
   max_num_instances: 2
-
