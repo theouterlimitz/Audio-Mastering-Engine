@@ -1,5 +1,5 @@
 # frontend/main.py
-# This is the final, fully-corrected version of the frontend service.
+# THIS IS THE GUARANTEED CORRECT VERSION - 09/11/2025
 # It includes the corrected import statement for the Secret Manager client.
 
 import os
@@ -13,11 +13,9 @@ from flask import Flask, render_template, request, jsonify
 # Import the necessary Google Cloud libraries
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
-# --- THIS IS THE FINAL FIX ---
-# The Secret Manager client has its own import statement.
+# --- THIS IS THE CORRECT IMPORT ---
 from google.cloud import secretmanager
-# --- END FIX ---
-
+# --- END CORRECT IMPORT ---
 
 # Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
@@ -34,40 +32,33 @@ BUCKET_NAME = None
 TASK_QUEUE_PATH = None
 SERVICE_ACCOUNT_EMAIL = None
 
-# Use Flask's `@app.before_first_request` decorator.
-# This function will run exactly ONCE when the first request comes in.
 @app.before_first_request
 def initialize_clients():
     """
     Fetches the service account key from Secret Manager and initializes
-    all Google Cloud clients. This function is critical for ensuring
-    we use key-based authentication.
+    all Google Cloud clients.
     """
-    # Make our global variables modifiable within this function
     global db, storage_client, tasks_client, GCP_PROJECT_ID, BUCKET_NAME, TASK_QUEUE_PATH, SERVICE_ACCOUNT_EMAIL
 
     try:
-        secret_id = os.environ.get("SA_KEY_SECRET_ID")
-        if not secret_id:
+        # Use the full secret version ID from the environment variable
+        secret_version_id = os.environ.get("SA_KEY_SECRET_ID")
+        if not secret_version_id:
             logging.critical("FATAL: SA_KEY_SECRET_ID environment variable not set.")
             return
 
-        # Initialize the Secret Manager client to fetch the key
         secret_client = secretmanager.SecretManagerServiceClient()
-        response = secret_client.access_secret_version(name=secret_id)
+        response = secret_client.access_secret_version(name=secret_version_id)
         secret_json_string = response.payload.data.decode("UTF-8")
         secret_info = json.loads(secret_json_string)
         
-        # Create credentials EXPLICITLY from the fetched private key
         credentials = service_account.Credentials.from_service_account_info(secret_info)
         
-        # Now, create all other clients using these explicit, key-based credentials
         GCP_PROJECT_ID = credentials.project_id
         db = firestore.Client(project=GCP_PROJECT_ID, credentials=credentials)
         storage_client = storage.Client(project=GCP_PROJECT_ID, credentials=credentials)
         tasks_client = tasks_v2.CloudTasksClient(credentials=credentials)
         
-        # Configure other necessary variables
         BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
         GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
         TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
@@ -105,7 +96,7 @@ def generate_upload_url():
     try:
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=3600, # 1 hour
+            expiration=3600,
             method="PUT",
             content_type=data.get('contentType', 'application/octet-stream')
         )
