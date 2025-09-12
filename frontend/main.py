@@ -1,5 +1,5 @@
 # frontend/main.py
-# Final, correct version with deferred client initialization.
+# Final, correct version with modern, compatible Flask code.
 
 import os
 import uuid
@@ -10,42 +10,40 @@ from flask import Flask, render_template, request, jsonify
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
 
+# --- THIS IS THE FINAL FIX ---
+# We remove the old, broken @app.before_first_request decorator and
+# use a standard Flask pattern to initialize our clients.
+# --- END FIX ---
+
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
 
 app = Flask(__name__)
 
-db = None
-storage_client = None
-tasks_client = None
-GCP_PROJECT_ID = None
-BUCKET_NAME = None
-TASK_QUEUE_PATH = None
-SERVICE_ACCOUNT_EMAIL = None
+# Initialize clients in the global scope. This is safe in Cloud Run.
+try:
+    db = firestore.Client()
+    storage_client = storage.Client()
+    tasks_client = tasks_v2.CloudTasksClient()
+    
+    GCP_PROJECT_ID = storage_client.project
+    BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
+    GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
+    TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
+    TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
+    
+    # In Cloud Run, the service account is the Compute Engine default.
+    import requests
+    metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+    metadata_response = requests.get(metadata_url, headers={'Metadata-Flavor': 'Google'})
+    SERVICE_ACCOUNT_EMAIL = metadata_response.text
 
-@app.before_first_request
-def initialize_clients():
-    global db, storage_client, tasks_client, GCP_PROJECT_ID, BUCKET_NAME, TASK_QUEUE_PATH, SERVICE_ACCOUNT_EMAIL
-    try:
-        db = firestore.Client()
-        storage_client = storage.Client()
-        tasks_client = tasks_v2.CloudTasksClient()
-        
-        GCP_PROJECT_ID = storage_client.project
-        BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
-        GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
-        TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
-        TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
-        
-        import requests
-        metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
-        metadata_response = requests.get(metadata_url, headers={'Metadata-Flavor': 'Google'})
-        SERVICE_ACCOUNT_EMAIL = metadata_response.text
+    logging.info(f"Successfully initialized all GCP clients. Running as: {SERVICE_ACCOUNT_EMAIL}")
 
-        logging.info(f"Successfully initialized all GCP clients. Running as: {SERVICE_ACCOUNT_EMAIL}")
+except Exception:
+    logging.exception("FATAL: A critical error occurred during client initialization.")
+    db, storage_client, tasks_client = None, None, None
 
-    except Exception:
-        logging.exception("FATAL: A critical error occurred during client initialization.")
 
 @app.route('/')
 def index():
@@ -117,3 +115,4 @@ def submit_job():
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=PORT, debug=True)
+
