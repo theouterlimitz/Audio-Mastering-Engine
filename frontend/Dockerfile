@@ -16,6 +16,10 @@ COPY templates/ ./templates
 COPY static/ ./static
 
 # --- THIS IS THE FINAL FIX ---
-# This command tells Gunicorn to bind to the port specified by the
-# PORT environment variable, which is provided by Cloud Run.
-CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "main:app"]
+# This "shell form" of the CMD instruction correctly interprets the
+# $PORT environment variable provided by Cloud Run.
+CMD gunicorn --bind 0.0.0.0:$PORT main:app
+# --- END FIX ---
+
+    
+
