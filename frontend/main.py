@@ -1,46 +1,32 @@
 # frontend/main.py
-# This is the final, definitive version. It uses a service account key
-# from Secret Manager to guarantee that signed URLs can be generated.
+# This is the final, definitive, simplified version. It initializes
+# clients explicitly to ensure correct credential discovery.
 
 import os
 import uuid
 import json
 import logging
 import google.auth
-from google.oauth2 import service_account
 from flask import Flask, render_template, request, jsonify
 
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
-from google.cloud import secretmanager
 
+# Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
 
 app = Flask(__name__)
 
 # --- Client Initialization ---
-# This block runs once when the container starts. It fetches the key
-# and creates all clients with explicit, key-based credentials.
+# This block runs once when the container starts.
+# It explicitly fetches the default credentials for the environment.
 try:
-    # Get the full secret path from the environment variable set during deployment
-    secret_version_id = os.environ.get("SA_KEY_SECRET_ID")
-    if not secret_version_id:
-        raise RuntimeError("SA_KEY_SECRET_ID environment variable not set.")
+    # This is the key: explicitly get the credentials and project ID.
+    # This forces the library to correctly evaluate the permissions of the
+    # service account, including the ability to use the IAM API for signing.
+    credentials, GCP_PROJECT_ID = google.auth.default()
 
-    # Create a client for Secret Manager
-    secret_client = secretmanager.SecretManagerServiceClient()
-    
-    # Access the secret
-    response = secret_client.access_secret_version(name=secret_version_id)
-    secret_json_string = response.payload.data.decode("UTF-8")
-    secret_info = json.loads(secret_json_string)
-    
-    # Create credentials from the key file info
-    credentials = service_account.Credentials.from_service_account_info(secret_info)
-    
-    # Initialize all other clients using these explicit credentials
-    GCP_PROJECT_ID = credentials.project_id
     db = firestore.Client(project=GCP_PROJECT_ID, credentials=credentials)
     storage_client = storage.Client(project=GCP_PROJECT_ID, credentials=credentials)
     tasks_client = tasks_v2.CloudTasksClient(credentials=credentials)
@@ -49,9 +35,11 @@ try:
     GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
     TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
     TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
+    
+    # Get the service account email from the credentials
     SERVICE_ACCOUNT_EMAIL = credentials.service_account_email
 
-    logging.info("Successfully initialized all GCP clients using the service account key from Secret Manager.")
+    logging.info(f"Successfully initialized all GCP clients. Running as: {SERVICE_ACCOUNT_EMAIL}")
 
 except Exception:
     logging.exception("FATAL: A critical error occurred during client initialization.")
@@ -82,7 +70,7 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
-        # This will now succeed because our storage_client was created with a private key.
+        # This will now succeed because our storage_client was initialized correctly.
         signed_url = blob.generate_signed_url(
             version="v4",
             expiration=3600,
@@ -91,7 +79,7 @@ def generate_upload_url():
         )
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception:
-        logging.exception("CRITICAL: Signed URL generation failed even with explicit key.")
+        logging.exception("CRITICAL: Signed URL generation failed.")
         return jsonify({"error": "Could not generate upload URL."}), 500
 
 @app.route('/submit-job', methods=['POST'])
@@ -130,3 +118,4 @@ def submit_job():
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=PORT, debug=True)
+
