@@ -1,26 +1,20 @@
 # frontend/main.py
-# Final, correct version with proper logging and key-based auth.
+# Final, correct version with deferred client initialization.
 
 import os
 import uuid
 import json
 import logging
-import google.auth
-from google.oauth2 import service_account
 from flask import Flask, render_template, request, jsonify
 
-# Import the necessary Google Cloud libraries
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
-from google.cloud import secretmanager
 
-# Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
 logging_client.setup_logging()
 
 app = Flask(__name__)
 
-# Define global variables for our clients. They start as None.
 db = None
 storage_client = None
 tasks_client = None
@@ -31,42 +25,27 @@ SERVICE_ACCOUNT_EMAIL = None
 
 @app.before_first_request
 def initialize_clients():
-    """
-    Fetches the service account key from Secret Manager and initializes
-    all Google Cloud clients. This runs once when the first request comes in.
-    """
     global db, storage_client, tasks_client, GCP_PROJECT_ID, BUCKET_NAME, TASK_QUEUE_PATH, SERVICE_ACCOUNT_EMAIL
-
     try:
-        # Use the full secret version ID from the environment variable
-        secret_version_id = os.environ.get("SA_KEY_SECRET_ID")
-        if not secret_version_id:
-            logging.critical("FATAL: SA_KEY_SECRET_ID environment variable not set.")
-            return
-
-        secret_client = secretmanager.SecretManagerServiceClient()
-        response = secret_client.access_secret_version(name=secret_version_id)
-        secret_json_string = response.payload.data.decode("UTF-8")
-        secret_info = json.loads(secret_json_string)
+        db = firestore.Client()
+        storage_client = storage.Client()
+        tasks_client = tasks_v2.CloudTasksClient()
         
-        credentials = service_account.Credentials.from_service_account_info(secret_info)
-        
-        GCP_PROJECT_ID = credentials.project_id
-        db = firestore.Client(project=GCP_PROJECT_ID, credentials=credentials)
-        storage_client = storage.Client(project=GCP_PROJECT_ID, credentials=credentials)
-        tasks_client = tasks_v2.CloudTasksClient(credentials=credentials)
-        
+        GCP_PROJECT_ID = storage_client.project
         BUCKET_NAME = f"{GCP_PROJECT_ID}.appspot.com"
         GCP_REGION = os.environ.get('GCP_REGION', 'us-central1')
         TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
         TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
-        SERVICE_ACCOUNT_EMAIL = credentials.service_account_email
+        
+        import requests
+        metadata_url = "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email"
+        metadata_response = requests.get(metadata_url, headers={'Metadata-Flavor': 'Google'})
+        SERVICE_ACCOUNT_EMAIL = metadata_response.text
 
-        logging.info("Successfully initialized all GCP clients using the service account key.")
+        logging.info(f"Successfully initialized all GCP clients. Running as: {SERVICE_ACCOUNT_EMAIL}")
 
     except Exception:
         logging.exception("FATAL: A critical error occurred during client initialization.")
-
 
 @app.route('/')
 def index():
@@ -98,8 +77,8 @@ def generate_upload_url():
             content_type=data.get('contentType', 'application/octet-stream')
         )
         return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
-    except Exception as e:
-        logging.exception("CRITICAL: Signed URL generation failed even with explicit key.")
+    except Exception:
+        logging.exception("CRITICAL: Signed URL generation failed.")
         return jsonify({"error": "Could not generate upload URL."}), 500
 
 @app.route('/submit-job', methods=['POST'])
