@@ -1,6 +1,5 @@
 # frontend/main.py
-# THIS IS THE GUARANTEED CORRECT VERSION - 09/11/2025
-# It includes the corrected import statement for the Secret Manager client.
+# Final, correct version with proper logging and key-based auth.
 
 import os
 import uuid
@@ -13,9 +12,7 @@ from flask import Flask, render_template, request, jsonify
 # Import the necessary Google Cloud libraries
 import google.cloud.logging
 from google.cloud import firestore, storage, tasks_v2
-# --- THIS IS THE CORRECT IMPORT ---
 from google.cloud import secretmanager
-# --- END CORRECT IMPORT ---
 
 # Setup proper cloud logging immediately.
 logging_client = google.cloud.logging.Client()
@@ -36,7 +33,7 @@ SERVICE_ACCOUNT_EMAIL = None
 def initialize_clients():
     """
     Fetches the service account key from Secret Manager and initializes
-    all Google Cloud clients.
+    all Google Cloud clients. This runs once when the first request comes in.
     """
     global db, storage_client, tasks_client, GCP_PROJECT_ID, BUCKET_NAME, TASK_QUEUE_PATH, SERVICE_ACCOUNT_EMAIL
 
@@ -141,4 +138,3 @@ def submit_job():
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=PORT, debug=True)
-
