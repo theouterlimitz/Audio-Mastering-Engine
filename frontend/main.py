@@ -1,11 +1,12 @@
 # frontend/main.py
-# This is the final, definitive, simplified version. It initializes
-# clients explicitly to ensure correct credential discovery.
+# This is the final, definitive, simplified version. It uses a robust
+# Signed Policy Document to handle file uploads.
 
 import os
 import uuid
 import json
 import logging
+import datetime
 import google.auth
 from flask import Flask, render_template, request, jsonify
 
@@ -20,11 +21,7 @@ app = Flask(__name__)
 
 # --- Client Initialization ---
 # This block runs once when the container starts.
-# It explicitly fetches the default credentials for the environment.
 try:
-    # This is the key: explicitly get the credentials and project ID.
-    # This forces the library to correctly evaluate the permissions of the
-    # service account, including the ability to use the IAM API for signing.
     credentials, GCP_PROJECT_ID = google.auth.default()
 
     db = firestore.Client(project=GCP_PROJECT_ID, credentials=credentials)
@@ -36,7 +33,6 @@ try:
     TASK_QUEUE = os.environ.get('TASK_QUEUE', 'mastering-queue')
     TASK_QUEUE_PATH = tasks_client.queue_path(GCP_PROJECT_ID, GCP_REGION, TASK_QUEUE)
     
-    # Get the service account email from the credentials
     SERVICE_ACCOUNT_EMAIL = credentials.service_account_email
 
     logging.info(f"Successfully initialized all GCP clients. Running as: {SERVICE_ACCOUNT_EMAIL}")
@@ -52,6 +48,9 @@ def index():
     firebase_config = os.environ.get('FIREBASE_CONFIG_JSON')
     return render_template('index.html', firebase_config=firebase_config)
 
+# --- THIS IS THE FINAL FIX ---
+# This endpoint now generates a Signed Policy Document, which is a more
+# robust method for browser-based uploads than a simple V4 Signed URL.
 @app.route('/generate-upload-url', methods=['POST'])
 def generate_upload_url():
     if not storage_client:
@@ -60,6 +59,7 @@ def generate_upload_url():
 
     data = request.get_json()
     filename = data.get('filename')
+    content_type = data.get('contentType', 'application/octet-stream')
     if not filename:
         return jsonify({"error": "Filename not provided."}), 400
 
@@ -70,17 +70,20 @@ def generate_upload_url():
     blob = bucket.blob(blob_name)
 
     try:
-        # This will now succeed because our storage_client was initialized correctly.
-        signed_url = blob.generate_signed_url(
-            version="v4",
-            expiration=3600,
-            method="PUT",
-            content_type=data.get('contentType', 'application/octet-stream')
+        # Create the policy document for a POST request
+        policy = blob.generate_signed_post_policy_v4(
+            expiration=datetime.timedelta(minutes=15),
+            fields={
+                "Content-Type": content_type,
+            },
         )
-        return jsonify({"signedUrl": signed_url, "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
+        # The frontend will receive the URL to POST to, and the required form fields.
+        return jsonify({"url": policy["url"], "fields": policy["fields"], "gcsUri": f"gs://{BUCKET_NAME}/{blob_name}"})
     except Exception:
-        logging.exception("CRITICAL: Signed URL generation failed.")
+        logging.exception("CRITICAL: Signed Policy Document generation failed.")
         return jsonify({"error": "Could not generate upload URL."}), 500
+# --- END FIX ---
+
 
 @app.route('/submit-job', methods=['POST'])
 def submit_job():
@@ -118,4 +121,3 @@ def submit_job():
 if __name__ == '__main__':
     PORT = int(os.environ.get("PORT", 8080))
     app.run(host='0.0.0.0', port=PORT, debug=True)
-

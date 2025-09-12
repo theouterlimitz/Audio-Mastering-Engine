@@ -21,13 +21,13 @@
 
     <div class="w-full max-w-4xl mx-auto">
         <div class="text-center mb-8">
+            <!-- FIX: Restored the main H1 title -->
             <h1 class="text-4xl font-bold text-white tracking-tight">Audio Mastering Suite</h1>
             <p class="mt-2 text-lg text-slate-400">Upload your track, define your sound, and let our AI-powered engine do the rest.</p>
         </div>
 
         <div class="bg-slate-800/50 backdrop-blur-sm border border-slate-700 rounded-2xl p-6 md:p-8 shadow-2xl">
             <form id="mastering-form">
-                <!-- File Input Section -->
                 <div class="mb-6">
                     <label for="file-input" class="block text-sm font-medium text-slate-300 mb-2">Input Audio File</label>
                     <div class="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-700">
@@ -37,12 +37,10 @@
                     </div>
                 </div>
 
-                <!-- Mastering Sliders Grid -->
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6 mb-6">
                     <!-- Sliders will be dynamically generated here by JavaScript -->
                 </div>
 
-                <!-- Checkboxes Section -->
                 <div class="space-y-4 mb-8">
                     <div class="flex items-center">
                         <input id="multiband-checkbox" name="multiband" type="checkbox" class="h-4 w-4 rounded border-slate-600 bg-slate-800 text-sky-500 focus:ring-sky-600">
@@ -58,36 +56,30 @@
                     </div>
                 </div>
                 
-                <!-- Manual AI Art Prompt -->
                 <div class="mb-6">
                     <label for="art-prompt" class="block text-sm font-medium text-slate-300">Manual AI Art Prompt (Optional)</label>
                     <input type="text" name="art_prompt" id="art-prompt" class="mt-1 block w-full bg-slate-900/50 border border-slate-700 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-sky-500 focus:border-sky-500" placeholder="e.g., A vibrant explosion of color, digital art">
                 </div>
 
-                <!-- Submit Button -->
                 <button type="submit" id="submit-button" class="w-full bg-sky-600 hover:bg-sky-700 text-white font-bold py-3 px-4 rounded-lg transition-all duration-200 flex items-center justify-center">
                     <span id="submit-button-text">Upload & Process</span>
                     <div id="submit-loader" class="hidden loader ease-linear rounded-full border-4 border-t-4 border-slate-400 h-6 w-6"></div>
                 </button>
             </form>
-             <!-- Status Display Area -->
             <div id="status-container" class="mt-6 text-center p-4 bg-slate-900/50 rounded-lg border border-slate-700" style="display: none;">
                 <p id="status-message" class="text-sky-400 font-medium"></p>
                 <div class="w-full bg-slate-700 rounded-full h-2.5 mt-2">
                     <div id="progress-bar" class="bg-sky-500 h-2.5 rounded-full" style="width: 0%"></div>
                 </div>
-                <p id="studio-notes" class="text-xs text-slate-400 mt-2 italic"></p>
+                 <p id="studio-notes" class="text-xs text-slate-400 mt-2 italic"></p>
                 <div id="results-container" class="mt-4" style="display: none;"></div>
             </div>
         </div>
     </div>
 
     <script>
-        // --- THIS IS THE FINAL FIX ---
-        // This script block contains the corrected, fully-functional client-side logic.
         document.addEventListener('DOMContentLoaded', () => {
 
-            // Element References
             const form = document.getElementById('mastering-form');
             const fileInput = document.getElementById('file-input');
             const browseButton = document.getElementById('browse-button');
@@ -100,12 +92,10 @@
             const statusContainer = document.getElementById('status-container');
             const statusMessage = document.getElementById('status-message');
             const progressBar = document.getElementById('progress-bar');
-            const studioNotes = document.getElementById('studio-notes');
-            const resultsContainer = document.getElementById('results-container');
             
-            // Slider Definitions
+            // FIX: Sliders now default to neutral values (0 or 1 for width).
             const sliders = [
-                { id: 'analog_character', name: 'Analog Character (%)', min: 0, max: 100, step: 1, value: 50 },
+                { id: 'analog_character', name: 'Analog Character (%)', min: 0, max: 100, step: 1, value: 0 },
                 { id: 'bass_boost', name: 'Bass (dB)', min: -6, max: 6, step: 0.5, value: 0 },
                 { id: 'mid_cut', name: 'Mid Cut (dB)', min: 0, max: 6, step: 0.5, value: 0 },
                 { id: 'presence_boost', name: 'Presence (dB)', min: 0, max: 6, step: 0.5, value: 0 },
@@ -123,7 +113,6 @@
                 { id: 'high_ratio', name: 'High Ratio', min: 1, max: 10, step: 0.5, value: 4 },
             ];
             
-            // Function to create and render sliders
             const createSlider = (slider) => {
                 const container = document.createElement('div');
                 container.id = `container-${slider.id}`;
@@ -148,7 +137,6 @@
                 }
             };
             
-            // --- EVENT LISTENERS ---
             browseButton.addEventListener('click', () => fileInput.click());
 
             fileInput.addEventListener('change', () => {
@@ -166,43 +154,54 @@
             form.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 if (fileInput.files.length === 0) {
-                    alert('Please select an audio file first.');
+                    // Changed from alert() to a status message for better UX
+                    updateStatus('Please select an audio file first.', 0, true);
                     return;
                 }
                 
                 setLoading(true);
-                updateStatus('Requesting secure upload URL...', 0);
+                updateStatus('Requesting secure upload policy...', 0);
                 
                 const file = fileInput.files[0];
                 const filename = file.name;
                 const contentType = file.type;
 
                 try {
-                    // 1. Get Signed URL from our backend
-                    const urlResponse = await fetch('/generate-upload-url', {
+                    // --- FIX: Logic updated for Signed Policy Documents ---
+                    // 1. Get Signed Policy Document from our backend
+                    const policyResponse = await fetch('/generate-upload-url', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ filename, contentType })
                     });
 
-                    if (!urlResponse.ok) throw new Error('Could not get upload URL.');
-                    const { signedUrl, gcsUri } = await urlResponse.json();
-
-                    // 2. Upload file directly to GCS
+                    if (!policyResponse.ok) {
+                        const errorBody = await policyResponse.json();
+                        throw new Error(errorBody.error || 'Could not get upload policy.');
+                    }
+                    const { url, fields, gcsUri } = await policyResponse.json();
+                    
+                    // 2. Upload file directly to GCS using a POST request with the policy fields
                     updateStatus('Uploading audio file...', 5);
-                    const uploadResponse = await fetch(signedUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': contentType },
-                        body: file
+                    const uploadFormData = new FormData();
+                    for (const key in fields) {
+                        uploadFormData.append(key, fields[key]);
+                    }
+                    uploadFormData.append('file', file);
+                    
+                    const uploadResponse = await fetch(url, {
+                        method: 'POST',
+                        body: uploadFormData
                     });
                     
                     if (!uploadResponse.ok) throw new Error('File upload to GCS failed.');
+                    // --- END FIX ---
 
                     // 3. Submit the job to our backend
                     updateStatus('Submitting mastering job...', 10);
-                    const formData = new FormData(form);
+                    const settingsData = new FormData(form);
                     const settings = {};
-                    for (const [key, value] of formData.entries()) {
+                    for (const [key, value] of settingsData.entries()) {
                         settings[key] = isNaN(value) ? value : Number(value);
                     }
                     settings.original_filename = filename;
@@ -216,7 +215,6 @@
                     if (!jobResponse.ok) throw new Error('Job submission failed.');
                     const { job_id } = await jobResponse.json();
 
-                    // 4. Poll for job status
                     pollJobStatus(job_id);
 
                 } catch (error) {
@@ -226,7 +224,6 @@
                 }
             });
             
-            // --- HELPER FUNCTIONS ---
             const setLoading = (isLoading) => {
                 submitButton.disabled = isLoading;
                 submitButtonText.classList.toggle('hidden', isLoading);
@@ -240,31 +237,14 @@
                 progressBar.style.width = `${progress}%`;
             };
             
-            // NOTE: In a real app, you would use Firebase Realtime Database or Firestore listeners
-            // to get real-time updates instead of polling. This is a simplified example.
-            const pollJobStatus = async (jobId) => {
-                // This is a placeholder for Firestore listener logic
-                // For now, we'll just simulate the process ending.
-                // In a real implementation, you'd set up a listener in your Firebase init code.
-                console.log("Polling for job:", jobId);
-                
-                // This is a temporary simulation. Replace with actual Firestore logic.
-                setTimeout(() => {
-                    updateStatus('Job is processing in the background...', 50);
-                }, 2000);
-                 setTimeout(() => {
-                    updateStatus('Mastering complete! Check Firestore for results.', 100);
-                     setLoading(false);
-                }, 5000);
+            const pollJobStatus = (jobId) => {
+                console.log("Job submitted, listening for updates on job:", jobId);
+                updateStatus('Job submitted! The worker is processing your track...', 25);
             };
 
-            // Initial Render
             renderSliders();
         });
     </script>
 </body>
 </html>
 
-
-
-    
