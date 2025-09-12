@@ -1,12 +1,12 @@
 # Dockerfile for the Frontend Service (The "Waiter")
-# Final version for a self-contained service.
+# This is the final, simplified version with the correct port binding.
 
 FROM python:3.11-slim
 
-ENV PYTHONUNBUFFERED=1
-ENV APP_HOME=/app
+# Set the working directory in the container
 WORKDIR /app
 
+# Copy and install dependencies first to leverage Docker layer caching
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -14,8 +14,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY main.py .
 COPY templates/ ./templates
 COPY static/ ./static
-COPY app_shared/ ./app_shared
 
-CMD ["gunicorn", "--bind", "0.0.0.0:8080", "--workers", "2", "--threads", "4", "--timeout", "120", "main:app"]
-
-#forcing stale cache rebuild
+# --- THIS IS THE FINAL FIX ---
+# This command tells Gunicorn to bind to the port specified by the
+# PORT environment variable, which is provided by Cloud Run.
+CMD ["gunicorn", "--bind", "0.0.0.0:$PORT", "main:app"]
