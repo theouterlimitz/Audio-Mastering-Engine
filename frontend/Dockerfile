@@ -19,7 +19,3 @@ COPY static/ ./static
 # This "shell form" of the CMD instruction correctly interprets the
 # $PORT environment variable provided by Cloud Run.
 CMD gunicorn --bind 0.0.0.0:$PORT main:app
-# --- END FIX ---
-
-    
-
