@@ -3,10 +3,13 @@ Flask
 gunicorn
 
 # Google Cloud Libraries
-google-cloud-storage
+# --- THIS IS THE FINAL FIX ---
+# We are pinning the storage library to a modern version that is
+# guaranteed to have the 'generate_signed_post_policy_v4' method.
+google-cloud-storage>=2.7.0
+# --- END FIX ---
 google-cloud-tasks
 google-cloud-firestore
 google-auth
 requests
 google-cloud-logging
-
